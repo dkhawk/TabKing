@@ -1,0 +1,125 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>TabKing - Visual Tab Finder & Advanced Search</title>
+  <link rel="stylesheet" href="finder.css">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@400;500;600;700&family=Inter:wght@400;500;600&display=swap" rel="stylesheet">
+</head>
+<body>
+  <div class="finder-app">
+    <!-- Header -->
+    <header class="finder-header">
+      <div class="header-brand">
+        <img src="../icons/icon-48.png" alt="TabKing" class="header-logo">
+        <div>
+          <h1 class="header-title">Visual Tab Finder</h1>
+          <p class="header-subtitle">Search, filter, and preview open browser tabs with visual snapshots and regex patterns.</p>
+        </div>
+      </div>
+      <div class="header-actions">
+        <button id="refreshTabsBtn" class="btn secondary-btn" title="Reload open tabs and workspace list">
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21.5 2v6h-6M2.5 22v-6h6"/><path d="M2 11.5a10 10 0 0 1 18.8-4.3L21.5 8M2.5 16l1.2 1.2A10 10 0 0 0 22 12.5"/></svg>
+          <span>Refresh Tabs</span>
+        </button>
+        <button id="refreshSnapshotsBtn" class="btn secondary-btn" title="Refresh visual snapshots of active tabs">
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M23 4v6h-6M1 20v-6h6"/><path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15"/></svg>
+          <span>Refresh Snapshots</span>
+        </button>
+      </div>
+    </header>
+
+    <!-- Search Controls Bar -->
+    <section class="search-section">
+      <div class="search-bar-wrapper">
+        <div class="search-input-group">
+          <svg class="search-icon" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="8"/><path d="M21 21l-4.35-4.35"/></svg>
+          <input type="text" id="searchInput" placeholder="Search tabs by title, domain, or Regex pattern..." autocomplete="off">
+          <button id="clearSearchBtn" class="clear-btn hidden">&times;</button>
+        </div>
+
+        <!-- Mode & Window Scope Controls -->
+        <div class="mode-toggles">
+          <!-- Window Scope -->
+          <select id="windowScopeSelect" class="select-pill" title="Filter tabs by window">
+            <option value="all">All Windows</option>
+            <option value="current">Current Window Only</option>
+          </select>
+
+          <!-- Regex Mode Toggle -->
+          <label class="toggle-pill" title="Toggle Regular Expressions search mode">
+            <input type="checkbox" id="regexToggle">
+            <span class="pill-label">Regex Mode <code>/.*$/</code></span>
+          </label>
+
+          <!-- Match In URLs / Titles -->
+          <label class="toggle-pill" title="Match inside URLs">
+            <input type="checkbox" id="matchUrlToggle" checked>
+            <span class="pill-label">Match URLs</span>
+          </label>
+        </div>
+      </div>
+
+      <!-- Regex Syntax Error Banner -->
+      <div id="regexErrorMsg" class="error-banner hidden">
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/></svg>
+        <span id="regexErrorText">Invalid Regular Expression syntax</span>
+      </div>
+
+      <!-- Tab Inactivity Age Slider Panel -->
+      <div class="age-filter-bar">
+        <div class="age-control-group">
+          <label class="age-label" for="ageSlider">
+            <span>Filter Inactive Age:</span>
+          </label>
+          <select id="ageDirectionSelect" class="select-pill small" title="Filter tabs older or newer than threshold">
+            <option value="older" selected>Older than (&gt;)</option>
+            <option value="newer">Newer than (&lt;)</option>
+          </select>
+          <input type="range" id="ageSlider" min="0.5" max="72" step="0.5" value="4" class="age-slider" title="Adjust inactivity hours">
+          <span id="ageReadoutBadge" class="readout-badge">4 hours</span>
+        </div>
+      </div>
+
+      <!-- Filter Chips Bar -->
+      <div class="filter-chips-container" id="filterChipsBar">
+        <button class="chip active" data-filter="all">All Tabs (<span id="countAll">0</span>)</button>
+        <button class="chip chip-stale" data-filter="stale">⌛ Filtered Age Tabs (<span id="countStale">0</span>)</button>
+        <button class="chip" data-filter="grouped">In Groups (<span id="countGrouped">0</span>)</button>
+        <button class="chip" data-filter="ungrouped">Ungrouped (<span id="countUngrouped">0</span>)</button>
+        <button class="chip" data-filter="thumbnails">With Thumbnails (<span id="countThumbnails">0</span>)</button>
+        <!-- Domain filter chips rendered dynamically -->
+      </div>
+    </section>
+
+    <!-- Results Overview Stats -->
+    <div class="results-header">
+      <div class="results-meta">
+        <span class="results-count" id="resultsCountText">Showing 0 tabs</span>
+        <button id="closeStaleBtn" class="btn tertiary-btn hidden" title="Quickly close all matching unpinned stale tabs">
+          <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="3 6 5 6 21 6"/><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/></svg>
+          <span>Close <span id="staleCloseCount">0</span> Stale Tabs</span>
+        </button>
+      </div>
+      <div class="view-switcher">
+        <button id="viewGridBtn" class="view-btn active" title="Visual Cards Grid View">
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="7" height="7"/><rect x="14" y="3" width="7" height="7"/><rect x="14" y="14" width="7" height="7"/><rect x="3" y="14" width="7" height="7"/></svg>
+        </button>
+        <button id="viewListBtn" class="view-btn" title="Compact List View">
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="8" y1="6" x2="21" y2="6"/><line x1="8" y1="12" x2="21" y2="12"/><line x1="8" y1="18" x2="21" y2="18"/><line x1="3" y1="6" x2="3.01" y2="6"/><line x1="3" y1="12" x2="3.01" y2="12"/><line x1="3" y1="18" x2="3.01" y2="18"/></svg>
+        </button>
+      </div>
+    </div>
+
+    <!-- Visual Tab Cards Grid Container -->
+    <main id="tabsGrid" class="cards-grid">
+      <!-- Rendered dynamically -->
+    </main>
+  </div>
+
+  <script src="finder.js"></script>
+</body>
+</html>

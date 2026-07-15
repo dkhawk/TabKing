@@ -1,0 +1,183 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>TabKing - Dashboard & Settings</title>
+  <link rel="stylesheet" href="options.css">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@400;500;600;700&family=Inter:wght@400;500;600&display=swap" rel="stylesheet">
+</head>
+<body>
+  <div class="dashboard-layout">
+    <!-- Sidebar Navigation -->
+    <aside class="sidebar">
+      <div class="brand">
+        <img src="../icons/icon-48.png" alt="TabKing" class="brand-logo">
+        <h1 class="brand-name">TabKing</h1>
+      </div>
+      <nav class="side-nav">
+        <a href="../finder/finder.html" target="_blank" class="nav-item highlight-nav">
+          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="8"/><path d="M21 21l-4.35-4.35"/></svg>
+          <span>Visual Tab Finder</span>
+        </a>
+        <a href="#rulesSection" class="nav-item active">
+          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 2v20M17 5H9.5a3.5 3.5 0 0 0 0 7h5a3.5 3.5 0 0 1 0 7H6"/></svg>
+          <span>Grouping Rules</span>
+        </a>
+        <a href="#sessionsSection" class="nav-item">
+          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M19 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11l5 5v11a2 2 0 0 1-2 2z"/><polyline points="17 21 17 13 7 13 7 21"/><polyline points="7 3 7 8 15 8"/></svg>
+          <span>Saved Sessions</span>
+        </a>
+        <a href="#preferencesSection" class="nav-item">
+          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-2 2 2 2 0 0 1-2-2v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83 0 2 2 0 0 1 0-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1-2-2 2 2 0 0 1 2-2h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 0-2.83 2 2 0 0 1 2.83 0l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 2-2 2 2 0 0 1 2 2v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 0 2 2 0 0 1 0 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 2 2 2 2 0 0 1-2 2h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg>
+          <span>Preferences & Data</span>
+        </a>
+      </nav>
+      <div class="sidebar-footer">
+        <span class="version-text">TabKing Extension v1.0.0</span>
+      </div>
+    </aside>
+
+    <!-- Main Content Area -->
+    <main class="main-content">
+      <!-- Top Banner -->
+      <header class="top-header" style="display: flex; justify-content: space-between; align-items: center;">
+        <div>
+          <h2 class="page-title">Workspace Configuration</h2>
+          <p class="page-desc">Customize automatic grouping regex patterns, domain rules, and saved session backups.</p>
+        </div>
+        <a href="../finder/finder.html" target="_blank" class="btn primary-btn" style="text-decoration: none;">Launch Visual Tab Finder</a>
+      </header>
+
+      <!-- Section: Grouping Rules -->
+      <section id="rulesSection" class="card-section">
+        <div class="section-header">
+          <div>
+            <h3 class="section-title">Automatic Grouping Rules</h3>
+            <p class="section-subtitle">Define custom regex patterns or domain matches to automatically organize open tabs into native Chrome groups.</p>
+          </div>
+          <button id="addRuleBtn" class="btn primary-btn">+ Add Custom Rule</button>
+        </div>
+
+        <div class="table-container">
+          <table class="rules-table">
+            <thead>
+              <tr>
+                <th>Status</th>
+                <th>Group Name</th>
+                <th>Regex / Domain Pattern</th>
+                <th>Group Color</th>
+                <th>Actions</th>
+              </tr>
+            </thead>
+            <tbody id="rulesTableBody">
+              <!-- Rendered dynamically -->
+            </tbody>
+          </table>
+        </div>
+      </section>
+
+      <!-- Section: Saved Sessions -->
+      <section id="sessionsSection" class="card-section">
+        <div class="section-header">
+          <div>
+            <h3 class="section-title">Saved Tab Sessions Manager</h3>
+            <p class="section-subtitle">View and restore full window session snapshots stored in extension memory.</p>
+          </div>
+        </div>
+        <div id="optionsSessionsList" class="sessions-grid">
+          <!-- Rendered dynamically -->
+        </div>
+      </section>
+
+      <!-- Section: Preferences & Data Backup -->
+      <section id="preferencesSection" class="card-section">
+        <h3 class="section-title">Preferences & Backup</h3>
+        <div class="pref-grid">
+          <div class="pref-card">
+            <h4>Domain Auto-Grouping Fallback</h4>
+            <p>Automatically group any leftover unhandled tabs by their hostname domain if no specific rule matches.</p>
+            <label class="toggle-switch">
+              <input type="checkbox" id="domainFallbackToggle" checked>
+              <span class="slider"></span>
+            </label>
+          </div>
+
+          <div class="pref-card">
+            <h4>Default Tab Staleness Threshold</h4>
+            <p>Set default inactivity hours and filter direction for identifying stale tabs across the extension.</p>
+            <div style="display: flex; gap: 10px; align-items: center; margin-top: 10px;">
+              <select id="optionsStaleDirectionSelect" class="form-input" style="width: auto;">
+                <option value="older" selected>Older than (&gt;)</option>
+                <option value="newer">Newer than (&lt;)</option>
+              </select>
+              <input type="number" id="optionsStaleHoursInput" class="form-input" min="0.5" max="72" step="0.5" value="4" style="width: 90px;">
+              <span style="font-size: 13px; color: var(--text-muted);">hours</span>
+            </div>
+          </div>
+
+          <div class="pref-card">
+            <h4>Data Export & Backup</h4>
+            <p>Export all custom patterns and saved tab sessions as JSON backup files.</p>
+            <div class="button-row">
+              <button id="exportDataBtn" class="btn secondary-btn">Export Configuration</button>
+              <label for="importFileInput" class="btn secondary-btn" style="cursor: pointer;">Import JSON File</label>
+              <input type="file" id="importFileInput" accept=".json" style="display: none;">
+            </div>
+          </div>
+
+          <div class="pref-card">
+            <h4>Keyboard Shortcuts</h4>
+            <p>Use built-in Chrome keyboard triggers for rapid actions:</p>
+            <div class="shortcut-list">
+              <div class="shortcut-item"><span>Open TabKing Popup:</span> <code>Command+Shift+K</code> / <code>Ctrl+Shift+K</code></div>
+              <div class="shortcut-item"><span>Auto-Group Open Tabs:</span> <code>Command+Shift+G</code> / <code>Ctrl+Shift+G</code></div>
+            </div>
+          </div>
+        </div>
+      </section>
+    </main>
+  </div>
+
+  <!-- Add/Edit Rule Modal Dialog -->
+  <dialog id="ruleModal" class="modal-dialog">
+    <div class="modal-content">
+      <h3 class="modal-title" id="ruleModalTitle">Add Grouping Rule</h3>
+      
+      <div class="form-group">
+        <label class="form-label" for="ruleNameInput">Group Title Name</label>
+        <input type="text" id="ruleNameInput" class="form-input" placeholder="e.g. Documentation & Guides">
+      </div>
+
+      <div class="form-group">
+        <label class="form-label" for="rulePatternInput">URL Regex or Keywords Match Pattern</label>
+        <input type="text" id="rulePatternInput" class="form-input" placeholder="e.g. (developer|docs|github)\.com">
+      </div>
+
+      <div class="form-group">
+        <label class="form-label" for="ruleColorSelect">Group Tag Color</label>
+        <select id="ruleColorSelect" class="form-input">
+          <option value="grey">Grey</option>
+          <option value="blue" selected>Blue</option>
+          <option value="red">Red</option>
+          <option value="yellow">Yellow</option>
+          <option value="green">Green</option>
+          <option value="pink">Pink</option>
+          <option value="purple">Purple</option>
+          <option value="cyan">Cyan</option>
+          <option value="orange">Orange</option>
+        </select>
+      </div>
+
+      <div class="modal-actions">
+        <button id="cancelRuleBtn" class="btn tertiary-btn">Cancel</button>
+        <button id="saveRuleBtn" class="btn primary-btn">Save Rule</button>
+      </div>
+    </div>
+  </dialog>
+
+  <script src="options.js"></script>
+</body>
+</html>
