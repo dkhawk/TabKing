@@ -51,13 +51,65 @@ const TabSummarizer = {
         return summary;
       }
     } catch (err) {
-      console.warn(`TabSummarizer: Could not execute script on tab ${tab.id} (${tab.url}):`, err.message);
+      const msg = err.message || '';
+      // If blocked by Chrome Enterprise / ExtensionsSettings policy, handle silently without console.warn
+      if (msg.includes('ExtensionsSettings') || msg.includes('cannot be scripted') || msg.includes('Cannot access') || msg.includes('permission')) {
+        const summary = this.getPolicyRestrictedSummary(tab);
+        this.cache.set(cacheKey, summary);
+        return summary;
+      }
+      // For other unexpected errors, log as debug instead of warn so DevTools doesn't show yellow error boxes
+      console.debug(`TabSummarizer: Could not execute script on tab ${tab.id} (${tab.url}):`, msg);
     }
 
-    // 4. Fallback if script execution failed (e.g. tab still loading, or restricted origin)
+    // 4. Fallback if script execution failed (e.g. tab still loading)
     const summary = this.getFallbackSummary(tab, 'Content not directly accessible');
     this.cache.set(cacheKey, summary);
     return summary;
+  },
+
+  /**
+   * Generates a summary for pages restricted by Chrome Enterprise / ExtensionsSettings policy
+   */
+  getPolicyRestrictedSummary(tab) {
+    const domain = this.getDomain(tab.url);
+    const url = tab.url || '';
+    let category = 'Policy Restricted';
+    let overview = `Enterprise Policy Protected: Chrome policy prevents extensions from inspecting this page. Title: "${tab.title || 'Untitled'}" on ${domain}.`;
+
+    if (url.includes('groups.google.com')) {
+      category = 'Google Groups';
+      const groupName = url.split('/g/')[1]?.split('/')[0] || '';
+      overview = `Google Groups Discussion${groupName ? ` (${groupName})` : ''}: "${tab.title || 'Group Thread'}" on ${domain}. (Page is protected by Chrome Enterprise policy).`;
+    } else if (url.includes('docs.google.com')) {
+      category = 'Google Docs';
+      overview = `Google Document: "${tab.title || 'Untitled Document'}" on ${domain}. (Page is protected by Chrome Enterprise policy).`;
+    } else if (url.includes('mail.google.com')) {
+      category = 'Google Mail';
+      overview = `Google Mail: "${tab.title || 'Inbox/Email'}" on ${domain}. (Page is protected by Chrome Enterprise policy).`;
+    } else if (url.includes('meet.google.com')) {
+      category = 'Google Meet';
+      overview = `Google Meet: "${tab.title || 'Meeting'}" on ${domain}. (Page is protected by Chrome Enterprise policy).`;
+    } else if (url.includes('drive.google.com')) {
+      category = 'Google Drive';
+      overview = `Google Drive: "${tab.title || 'Drive'}" on ${domain}. (Page is protected by Chrome Enterprise policy).`;
+    }
+
+    return {
+      title: tab.title || 'Protected Page',
+      url: tab.url,
+      domain,
+      overview,
+      headings: [],
+      insights: {
+        wordCount: 0,
+        readTime: 'Protected',
+        contentType: category,
+        hasForm: false
+      },
+      siteBadge: { text: `🔒 ${category}`, type: 'system' },
+      status: 'restricted'
+    };
   },
 
   /**
