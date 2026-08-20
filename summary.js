@@ -178,9 +178,13 @@ const TabSummarizer = {
   formatExtractedContent(tab, data) {
     const domain = this.getDomain(tab.url);
     
-    // 1. Build Overview
+    // 1. Build Overview (Prioritize visible viewport text & top-of-page text)
     let overview = '';
-    if (data.metaDesc) {
+    if (data.viewportText && data.viewportText.length > 50) {
+      overview = data.viewportText;
+    } else if (data.topOfPageText && data.topOfPageText.length > 50) {
+      overview = data.topOfPageText;
+    } else if (data.metaDesc) {
       overview = data.metaDesc;
     } else if (data.paragraphs && data.paragraphs.length > 0) {
       overview = data.paragraphs.slice(0, 2).join(' ');
@@ -190,9 +194,9 @@ const TabSummarizer = {
       overview = `Web page titled "${tab.title || 'Untitled'}" on ${domain}.`;
     }
 
-    // Trim overview if too long
-    if (overview.length > 320) {
-      overview = overview.substring(0, 317) + '...';
+    // Trim overview if too long to keep it crisp & readable
+    if (overview.length > 340) {
+      overview = overview.substring(0, 337) + '...';
     }
 
     // 2. Determine Content Type
@@ -296,7 +300,55 @@ function extractPageContent() {
     .filter((p) => p.length > 40)
     .slice(0, 5);
 
-  // 4. Page Statistics
+  // 4. Viewport & Above-The-Fold Text Extraction
+  let viewportText = '';
+  let topOfPageText = '';
+
+  try {
+    // A. Viewport Text (what is currently visible on screen)
+    const visibleTexts = [];
+    const walk = (node) => {
+      if (node.nodeType === Node.TEXT_NODE) {
+        const text = node.textContent.trim().replace(/\s+/g, ' ');
+        if (text.length > 15) {
+          const parent = node.parentElement;
+          if (parent && parent.offsetHeight > 0 && parent.offsetWidth > 0) {
+            const rect = parent.getBoundingClientRect();
+            // Check if element is inside the visible viewport
+            if (rect.top < window.innerHeight && rect.bottom > 0 && rect.left < window.innerWidth && rect.right > 0) {
+              visibleTexts.push(text);
+            }
+          }
+        }
+      } else if (node.nodeType === Node.ELEMENT_NODE) {
+        const tag = node.tagName.toLowerCase();
+        if (tag !== 'script' && tag !== 'style' && tag !== 'noscript' && tag !== 'svg' && tag !== 'canvas') {
+          const style = window.getComputedStyle(node);
+          if (style.display !== 'none' && style.visibility !== 'hidden' && style.opacity !== '0') {
+            for (const child of node.childNodes) {
+              walk(child);
+            }
+          }
+        }
+      }
+    };
+    walk(document.body || document.documentElement);
+    viewportText = visibleTexts.join(' ').trim();
+  } catch {
+    // Fallback if viewport calculation fails
+  }
+
+  try {
+    // B. Top-of-Page / Above-The-Fold Text (first 1000 chars of main/body)
+    const mainEl = document.querySelector('main, article, .content, #content, body');
+    if (mainEl) {
+      topOfPageText = mainEl.innerText.trim().replace(/\s+/g, ' ').substring(0, 1000);
+    }
+  } catch {
+    // Fallback
+  }
+
+  // 5. Page Statistics
   const bodyText = document.body ? document.body.innerText || '' : '';
   const wordCount = bodyText.split(/\s+/).filter(Boolean).length;
   const readTimeMins = Math.max(1, Math.round(wordCount / 200));
@@ -305,7 +357,7 @@ function extractPageContent() {
   const imageCount = document.querySelectorAll('img').length;
   const hasForm = document.querySelectorAll('form').length > 0;
 
-  // 5. Site-Specific Extractions
+  // 6. Site-Specific Extractions
   const siteData = {};
   const hostname = window.location.hostname;
 
@@ -345,6 +397,8 @@ function extractPageContent() {
     ogSiteName,
     headings,
     paragraphs: pElements,
+    viewportText,
+    topOfPageText,
     wordCount,
     readTimeMins,
     linkCount,
