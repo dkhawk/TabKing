@@ -38,8 +38,9 @@ document.addEventListener('DOMContentLoaded', async () => {
   const cancelSaveBtn = document.getElementById('cancelSaveBtn');
   const confirmSaveBtn = document.getElementById('confirmSaveBtn');
 
-  // Selection State
+  // Selection & Summary State
   const selectedTabIds = new Set();
+  const openSummaryTabIds = new Set();
   let currentFilteredTabs = [];
 
   // Selection Elements
@@ -304,10 +305,13 @@ document.addEventListener('DOMContentLoaded', async () => {
     const tabs = await chrome.tabs.query({ windowId: currentWindowId });
     const groups = await chrome.tabGroups.query({ windowId: currentWindowId });
 
-    // Prune selectedTabIds for tabs that no longer exist
+    // Prune selectedTabIds and openSummaryTabIds for tabs that no longer exist
     const allTabIds = new Set(tabs.map((t) => t.id));
     selectedTabIds.forEach((id) => {
       if (!allTabIds.has(id)) selectedTabIds.delete(id);
+    });
+    openSummaryTabIds.forEach((id) => {
+      if (!allTabIds.has(id)) openSummaryTabIds.delete(id);
     });
 
     const { staleHours = 4, staleDirection = 'older' } = await chrome.storage.local.get(['staleHours', 'staleDirection']);
@@ -495,15 +499,34 @@ document.addEventListener('DOMContentLoaded', async () => {
     const summaryPanel = document.createElement('div');
     summaryPanel.className = 'tab-summary-panel hidden';
 
+    // If this tab's summary was previously opened, restore its state on re-render!
+    if (openSummaryTabIds.has(tab.id)) {
+      summaryPanel.classList.remove('hidden');
+      summaryBtn.classList.add('active');
+      const cached = TabSummarizer.cache.get(`${tab.id}:${tab.url}`);
+      if (cached) {
+        renderSummaryPanel(cached, summaryPanel);
+      } else {
+        summaryPanel.innerHTML = '<div class="summary-loading"><span class="spinner"></span> Summarizing...</div>';
+        TabSummarizer.getSummary(tab).then((summary) => {
+          renderSummaryPanel(summary, summaryPanel);
+        }).catch((err) => {
+          summaryPanel.innerHTML = `<div class="summary-loading" style="color: var(--danger-color);">Failed to summarize: ${escapeHtml(err.message)}</div>`;
+        });
+      }
+    }
+
     summaryBtn.addEventListener('click', async (e) => {
       e.stopPropagation();
       const isHidden = summaryPanel.classList.contains('hidden');
       if (!isHidden) {
         summaryPanel.classList.add('hidden');
         summaryBtn.classList.remove('active');
+        openSummaryTabIds.delete(tab.id);
         return;
       }
 
+      openSummaryTabIds.add(tab.id);
       summaryPanel.innerHTML = '<div class="summary-loading"><span class="spinner"></span> Summarizing...</div>';
       summaryPanel.classList.remove('hidden');
       summaryBtn.classList.add('active');

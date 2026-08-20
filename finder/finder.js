@@ -42,6 +42,7 @@ document.addEventListener('DOMContentLoaded', async () => {
   const closeSelectedCount = document.getElementById('closeSelectedCount');
   
   const selectedTabIds = new Set();
+  const openSummaryTabIds = new Set();
   let currentFilteredTabs = [];
 
   let openTabs = [];
@@ -265,10 +266,13 @@ document.addEventListener('DOMContentLoaded', async () => {
     openTabs = await chrome.tabs.query({});
     const groups = await chrome.tabGroups.query({});
     
-    // Prune selectedTabIds for tabs that no longer exist
+    // Prune selectedTabIds and openSummaryTabIds for tabs that no longer exist
     const allTabIds = new Set(openTabs.map((t) => t.id));
     selectedTabIds.forEach((id) => {
       if (!allTabIds.has(id)) selectedTabIds.delete(id);
+    });
+    openSummaryTabIds.forEach((id) => {
+      if (!allTabIds.has(id)) openSummaryTabIds.delete(id);
     });
 
     nativeGroupsMap.clear();
@@ -704,15 +708,34 @@ document.addEventListener('DOMContentLoaded', async () => {
     const summaryPanel = document.createElement('div');
     summaryPanel.className = 'tab-summary-panel hidden';
 
+    // If this tab's summary was previously opened, restore its state on re-render!
+    if (openSummaryTabIds.has(tab.id)) {
+      summaryPanel.classList.remove('hidden');
+      summaryBtn.classList.add('active');
+      const cached = TabSummarizer.cache.get(`${tab.id}:${tab.url}`);
+      if (cached) {
+        renderSummaryPanel(cached, summaryPanel);
+      } else {
+        summaryPanel.innerHTML = '<div class="summary-loading"><span class="spinner"></span> Summarizing tab content...</div>';
+        TabSummarizer.getSummary(tab).then((summary) => {
+          renderSummaryPanel(summary, summaryPanel);
+        }).catch((err) => {
+          summaryPanel.innerHTML = `<div class="summary-loading" style="color: var(--danger-color);">Failed to summarize: ${escapeHtml(err.message)}</div>`;
+        });
+      }
+    }
+
     summaryBtn.addEventListener('click', async (e) => {
       e.stopPropagation();
       const isHidden = summaryPanel.classList.contains('hidden');
       if (!isHidden) {
         summaryPanel.classList.add('hidden');
         summaryBtn.classList.remove('active');
+        openSummaryTabIds.delete(tab.id);
         return;
       }
 
+      openSummaryTabIds.add(tab.id);
       summaryPanel.innerHTML = '<div class="summary-loading"><span class="spinner"></span> Summarizing tab content...</div>';
       summaryPanel.classList.remove('hidden');
       summaryBtn.classList.add('active');
