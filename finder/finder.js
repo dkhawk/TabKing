@@ -35,6 +35,15 @@ document.addEventListener('DOMContentLoaded', async () => {
   const countUngroupedEl = document.getElementById('countUngrouped');
   const countThumbnailsEl = document.getElementById('countThumbnails');
 
+  // Selection Elements & State
+  const selectAllCheckbox = document.getElementById('selectAllCheckbox');
+  const selectedCountBadge = document.getElementById('selectedCountBadge');
+  const closeSelectedBtn = document.getElementById('closeSelectedBtn');
+  const closeSelectedCount = document.getElementById('closeSelectedCount');
+  
+  const selectedTabIds = new Set();
+  let currentFilteredTabs = [];
+
   let openTabs = [];
   let nativeGroupsMap = new Map();
   let thumbnailsMap = {};
@@ -42,10 +51,54 @@ document.addEventListener('DOMContentLoaded', async () => {
   let isGridView = true;
   let currentWindowId = null;
 
-  // Load Saved Inactivity Age Settings
-  const { staleHours = 4, staleDirection = 'older' } = await chrome.storage.local.get(['staleHours', 'staleDirection']);
+  // Selection Listeners
+  if (selectAllCheckbox) {
+    selectAllCheckbox.addEventListener('change', () => {
+      const isChecked = selectAllCheckbox.checked;
+      currentFilteredTabs.forEach((t) => {
+        if (isChecked) {
+          selectedTabIds.add(t.id);
+        } else {
+          selectedTabIds.delete(t.id);
+        }
+      });
+      renderCards();
+    });
+  }
+
+  if (closeSelectedBtn) {
+    closeSelectedBtn.addEventListener('click', async () => {
+      if (selectedTabIds.size === 0) return;
+      const idsToClose = Array.from(selectedTabIds);
+      const count = idsToClose.length;
+      if (confirm(`Close ${count} selected tab${count > 1 ? 's' : ''}?`)) {
+        try {
+          await chrome.tabs.remove(idsToClose);
+        } catch {
+          // Ignore tabs already closed
+        }
+        selectedTabIds.clear();
+        await loadWorkspaceTabs();
+      }
+    });
+  }
+
+  // Load Saved Inactivity Age & View Preference Settings
+  const { staleHours = 4, staleDirection = 'older', isGridView: savedIsGrid = false } = await chrome.storage.local.get(['staleHours', 'staleDirection', 'isGridView']);
+  isGridView = savedIsGrid;
   if (ageSlider) ageSlider.value = staleHours;
   if (ageDirectionSelect) ageDirectionSelect.value = staleDirection;
+
+  // Set initial view switcher UI from saved preference
+  if (isGridView) {
+    viewGridBtn.classList.add('active');
+    viewListBtn.classList.remove('active');
+    tabsGrid.classList.remove('list-view');
+  } else {
+    viewListBtn.classList.add('active');
+    viewGridBtn.classList.remove('active');
+    tabsGrid.classList.add('list-view');
+  }
 
   // Initial Load
   const currentWin = await chrome.windows.getCurrent();
@@ -96,12 +149,13 @@ document.addEventListener('DOMContentLoaded', async () => {
     updateAgeReadout();
   }
 
-  // View Switcher
+  // View Switcher Listeners
   viewGridBtn.addEventListener('click', () => {
     isGridView = true;
     viewGridBtn.classList.add('active');
     viewListBtn.classList.remove('active');
     tabsGrid.classList.remove('list-view');
+    chrome.storage.local.set({ isGridView: true });
   });
 
   viewListBtn.addEventListener('click', () => {
@@ -109,6 +163,7 @@ document.addEventListener('DOMContentLoaded', async () => {
     viewListBtn.classList.add('active');
     viewGridBtn.classList.remove('active');
     tabsGrid.classList.add('list-view');
+    chrome.storage.local.set({ isGridView: false });
   });
 
   const refreshTabsBtn = document.getElementById('refreshTabsBtn');
@@ -210,6 +265,12 @@ document.addEventListener('DOMContentLoaded', async () => {
     openTabs = await chrome.tabs.query({});
     const groups = await chrome.tabGroups.query({});
     
+    // Prune selectedTabIds for tabs that no longer exist
+    const allTabIds = new Set(openTabs.map((t) => t.id));
+    selectedTabIds.forEach((id) => {
+      if (!allTabIds.has(id)) selectedTabIds.delete(id);
+    });
+
     nativeGroupsMap.clear();
     groups.forEach((g) => nativeGroupsMap.set(g.id, g));
 
@@ -399,11 +460,52 @@ document.addEventListener('DOMContentLoaded', async () => {
   }
 
   /**
+   * Updates Select All checkbox state, count badge, and close selected button in finder
+   */
+  function updateSelectionUI(filteredTabs = []) {
+    const selectedFilteredCount = filteredTabs.filter((t) => selectedTabIds.has(t.id)).length;
+    const totalSelected = selectedTabIds.size;
+
+    if (selectAllCheckbox) {
+      if (filteredTabs.length === 0) {
+        selectAllCheckbox.checked = false;
+        selectAllCheckbox.indeterminate = false;
+        selectAllCheckbox.disabled = true;
+      } else {
+        selectAllCheckbox.disabled = false;
+        selectAllCheckbox.checked = selectedFilteredCount === filteredTabs.length;
+        selectAllCheckbox.indeterminate = selectedFilteredCount > 0 && selectedFilteredCount < filteredTabs.length;
+      }
+    }
+
+    if (selectedCountBadge) {
+      if (totalSelected > 0) {
+        selectedCountBadge.textContent = `${totalSelected} selected`;
+        selectedCountBadge.classList.remove('hidden');
+      } else {
+        selectedCountBadge.classList.add('hidden');
+      }
+    }
+
+    if (closeSelectedBtn) {
+      if (totalSelected > 0) {
+        closeSelectedBtn.classList.remove('hidden');
+        if (closeSelectedCount) closeSelectedCount.textContent = totalSelected;
+      } else {
+        closeSelectedBtn.classList.add('hidden');
+      }
+    }
+  }
+
+  /**
    * Main Render function
    */
   function renderCards() {
     const filteredTabs = getDisplayedMatchingTabs();
     const matchingStaleTabs = filteredTabs.filter(isMatchingAgeFilter);
+
+    currentFilteredTabs = filteredTabs;
+    updateSelectionUI(filteredTabs);
 
     if (matchingStaleTabs.length > 0) {
       staleCloseCountEl.textContent = matchingStaleTabs.length;
@@ -430,7 +532,8 @@ document.addEventListener('DOMContentLoaded', async () => {
    */
   function createVisualTabCard(tab) {
     const card = document.createElement('div');
-    card.className = `tab-preview-card ${tab.active ? 'active-tab-card' : ''}`;
+    const isSelected = selectedTabIds.has(tab.id);
+    card.className = `tab-preview-card ${tab.active ? 'active-tab-card' : ''} ${isSelected ? 'selected-card' : ''}`;
 
     const thumbnailDataUrl = thumbnailsMap[tab.url];
     const group = nativeGroupsMap.get(tab.groupId);
@@ -443,6 +546,28 @@ document.addEventListener('DOMContentLoaded', async () => {
     // 1. Line 1: Top Domain Header Bar
     const domainHeader = document.createElement('div');
     domainHeader.className = 'card-domain-header';
+
+    // Selection Checkbox in Card Header
+    const checkbox = document.createElement('input');
+    checkbox.type = 'checkbox';
+    checkbox.className = 'tab-select-checkbox';
+    checkbox.checked = isSelected;
+    checkbox.title = 'Select tab';
+
+    checkbox.addEventListener('click', (e) => {
+      e.stopPropagation();
+    });
+
+    checkbox.addEventListener('change', () => {
+      if (checkbox.checked) {
+        selectedTabIds.add(tab.id);
+        card.classList.add('selected-card');
+      } else {
+        selectedTabIds.delete(tab.id);
+        card.classList.remove('selected-card');
+      }
+      updateSelectionUI(currentFilteredTabs);
+    });
 
     const tagsHtml = [];
     if (tab.lastAccessed) {
@@ -473,6 +598,8 @@ document.addEventListener('DOMContentLoaded', async () => {
         ${tagsHtml.join('')}
       </div>
     `;
+
+    domainHeader.prepend(checkbox);
 
     const domainFavicon = domainHeader.querySelector('.tab-favicon-icon');
     if (domainFavicon) {
@@ -568,6 +695,36 @@ document.addEventListener('DOMContentLoaded', async () => {
     const footer = document.createElement('div');
     footer.className = 'card-footer';
 
+    // Summary Button & Panel
+    const summaryBtn = document.createElement('button');
+    summaryBtn.className = 'action-btn summary-btn';
+    summaryBtn.title = 'Get AI-powered tab content summary';
+    summaryBtn.innerHTML = '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="16" y1="13" x2="8" y2="13"/><line x1="16" y1="17" x2="8" y2="17"/><polyline points="10 9 9 9 8 9"/></svg> Summary';
+
+    const summaryPanel = document.createElement('div');
+    summaryPanel.className = 'tab-summary-panel hidden';
+
+    summaryBtn.addEventListener('click', async (e) => {
+      e.stopPropagation();
+      const isHidden = summaryPanel.classList.contains('hidden');
+      if (!isHidden) {
+        summaryPanel.classList.add('hidden');
+        summaryBtn.classList.remove('active');
+        return;
+      }
+
+      summaryPanel.innerHTML = '<div class="summary-loading"><span class="spinner"></span> Summarizing tab content...</div>';
+      summaryPanel.classList.remove('hidden');
+      summaryBtn.classList.add('active');
+
+      try {
+        const summary = await TabSummarizer.getSummary(tab);
+        renderSummaryPanel(summary, summaryPanel);
+      } catch (err) {
+        summaryPanel.innerHTML = `<div class="summary-loading" style="color: var(--danger-color);">Failed to summarize: ${escapeHtml(err.message)}</div>`;
+      }
+    });
+
     const switchBtn = document.createElement('button');
     switchBtn.className = 'action-btn';
     switchBtn.innerHTML = '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="15 3 21 3 21 9"/><polyline points="9 21 3 21 3 15"/><line x1="21" y1="3" x2="14" y2="10"/><line x1="3" y1="21" x2="10" y2="14"/></svg> Jump';
@@ -596,6 +753,7 @@ document.addEventListener('DOMContentLoaded', async () => {
       renderCards();
     });
 
+    footer.appendChild(summaryBtn);
     footer.appendChild(switchBtn);
     footer.appendChild(closeBtn);
 
@@ -603,8 +761,42 @@ document.addEventListener('DOMContentLoaded', async () => {
     card.appendChild(thumbWindow);
     card.appendChild(body);
     card.appendChild(footer);
+    card.appendChild(summaryPanel);
 
     return card;
+  }
+
+  /**
+   * Renders the summary content inside a tab's summaryPanel
+   */
+  function renderSummaryPanel(summary, container) {
+    const headingsHtml = summary.headings && summary.headings.length > 0
+      ? `<div class="summary-section">
+           <span class="summary-section-title">Key Topics & Headings:</span>
+           <ul class="summary-headings-list">
+             ${summary.headings.map((h) => `<li>${escapeHtml(h)}</li>`).join('')}
+           </ul>
+         </div>`
+      : '';
+
+    const badgeHtml = summary.siteBadge
+      ? `<span class="detail-badge badge-site-special">${escapeHtml(summary.siteBadge.text)}</span>`
+      : '';
+
+    container.innerHTML = `
+      <div class="summary-content">
+        <div class="summary-header-row">
+          <span class="summary-label">✨ Tab Content Summary</span>
+          <div class="summary-badges">
+            ${badgeHtml}
+            <span class="detail-badge">${escapeHtml(summary.insights.contentType)}</span>
+            <span class="detail-badge">🕒 ${escapeHtml(summary.insights.readTime)}</span>
+          </div>
+        </div>
+        <p class="summary-overview-text">${escapeHtml(summary.overview)}</p>
+        ${headingsHtml}
+      </div>
+    `;
   }
 
   function getUrlPathOnly(urlStr) {

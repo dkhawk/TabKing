@@ -97,11 +97,29 @@
         <button id="clearSearchBtn" class="clear-btn hidden">&times;</button>
       </div>
 
-      <!-- Quick Group Actions -->
-      <div class="group-controls">
-        <button id="ungroupAllBtn" class="small-btn">Ungroup All</button>
-        <button id="collapseGroupsBtn" class="small-btn">Collapse Groups</button>
-        <button id="expandGroupsBtn" class="small-btn">Expand Groups</button>
+      <!-- Quick Group Actions & Selection Toolbar -->
+      <div class="workspace-toolbar">
+        <div class="selection-controls">
+          <label class="select-all-label" title="Select all filtered tabs">
+            <input type="checkbox" id="selectAllCheckbox">
+            <span class="select-all-text">Select All</span>
+          </label>
+          <span id="selectedCountBadge" class="selected-count-badge hidden">0 selected</span>
+        </div>
+        <div class="group-controls">
+          <button id="ungroupAllBtn" class="small-btn">Ungroup All</button>
+          <button id="collapseGroupsBtn" class="small-btn">Collapse Groups</button>
+          <button id="expandGroupsBtn" class="small-btn">Expand Groups</button>
+        </div>
+      </div>
+
+      <!-- Bulk Action Bar for Selection -->
+      <div id="selectionActionBar" class="selection-action-bar hidden">
+        <button id="closeSelectedBtn" class="btn danger-btn small-btn">
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="3 6 5 6 21 6"/><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/></svg>
+          <span>Close Selected (<span id="closeSelectedCount">0</span>)</span>
+        </button>
+        <button id="deselectAllBtn" class="small-btn">Deselect All</button>
       </div>
 
       <!-- Tab Tree / List -->
@@ -139,6 +157,7 @@
     </div>
   </dialog>
 
+  <script src="../summary.js"></script>
   <script src="popup.js"></script>
 </body>
 </html>
