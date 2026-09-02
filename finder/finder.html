@@ -98,28 +98,38 @@
     <!-- Results Overview Stats -->
     <div class="results-header">
       <div class="results-meta">
+        <label class="select-all-label" title="Select all filtered tabs">
+          <input type="checkbox" id="selectAllCheckbox">
+          <span class="select-all-text">Select All</span>
+        </label>
+        <span id="selectedCountBadge" class="selected-count-badge hidden">0 selected</span>
         <span class="results-count" id="resultsCountText">Showing 0 tabs</span>
+        <button id="closeSelectedBtn" class="btn danger-btn small-btn hidden">
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="3 6 5 6 21 6"/><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/></svg>
+          <span>Close Selected (<span id="closeSelectedCount">0</span>)</span>
+        </button>
         <button id="closeStaleBtn" class="btn tertiary-btn hidden" title="Quickly close all matching unpinned stale tabs">
           <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="3 6 5 6 21 6"/><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/></svg>
           <span>Close <span id="staleCloseCount">0</span> Stale Tabs</span>
         </button>
       </div>
       <div class="view-switcher">
-        <button id="viewGridBtn" class="view-btn active" title="Visual Cards Grid View">
+        <button id="viewGridBtn" class="view-btn" title="Visual Cards Grid View">
           <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="7" height="7"/><rect x="14" y="3" width="7" height="7"/><rect x="14" y="14" width="7" height="7"/><rect x="3" y="14" width="7" height="7"/></svg>
         </button>
-        <button id="viewListBtn" class="view-btn" title="Compact List View">
+        <button id="viewListBtn" class="view-btn active" title="Compact List View">
           <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="8" y1="6" x2="21" y2="6"/><line x1="8" y1="12" x2="21" y2="12"/><line x1="8" y1="18" x2="21" y2="18"/><line x1="3" y1="6" x2="3.01" y2="6"/><line x1="3" y1="12" x2="3.01" y2="12"/><line x1="3" y1="18" x2="3.01" y2="18"/></svg>
         </button>
       </div>
     </div>
 
     <!-- Visual Tab Cards Grid Container -->
-    <main id="tabsGrid" class="cards-grid">
+    <main id="tabsGrid" class="cards-grid list-view">
       <!-- Rendered dynamically -->
     </main>
   </div>
 
+  <script src="../summary.js"></script>
   <script src="finder.js"></script>
 </body>
 </html>

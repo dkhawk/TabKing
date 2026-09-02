@@ -38,12 +38,60 @@ document.addEventListener('DOMContentLoaded', async () => {
   const cancelSaveBtn = document.getElementById('cancelSaveBtn');
   const confirmSaveBtn = document.getElementById('confirmSaveBtn');
 
+  // Selection & Summary State
+  const selectedTabIds = new Set();
+  const openSummaryTabIds = new Set();
+  let currentFilteredTabs = [];
+
+  // Selection Elements
+  const selectAllCheckbox = document.getElementById('selectAllCheckbox');
+  const selectedCountBadge = document.getElementById('selectedCountBadge');
+  const selectionActionBar = document.getElementById('selectionActionBar');
+  const closeSelectedBtn = document.getElementById('closeSelectedBtn');
+  const closeSelectedCount = document.getElementById('closeSelectedCount');
+  const deselectAllBtn = document.getElementById('deselectAllBtn');
+
   let currentWindowId = null;
 
   // Initialize
   const windowInfo = await chrome.windows.getLastFocused();
   currentWindowId = windowInfo.id;
   await refreshState();
+
+  // Selection Toolbar Event Listeners
+  if (selectAllCheckbox) {
+    selectAllCheckbox.addEventListener('change', () => {
+      const isChecked = selectAllCheckbox.checked;
+      currentFilteredTabs.forEach((t) => {
+        if (isChecked) {
+          selectedTabIds.add(t.id);
+        } else {
+          selectedTabIds.delete(t.id);
+        }
+      });
+      renderOpenTabs(searchInput.value.trim().toLowerCase());
+    });
+  }
+
+  if (deselectAllBtn) {
+    deselectAllBtn.addEventListener('click', () => {
+      selectedTabIds.clear();
+      renderOpenTabs(searchInput.value.trim().toLowerCase());
+    });
+  }
+
+  if (closeSelectedBtn) {
+    closeSelectedBtn.addEventListener('click', async () => {
+      if (selectedTabIds.size === 0) return;
+      const idsToClose = Array.from(selectedTabIds);
+      const count = idsToClose.length;
+      if (confirm(`Close ${count} selected tab${count > 1 ? 's' : ''}?`)) {
+        await chrome.tabs.remove(idsToClose);
+        selectedTabIds.clear();
+        await refreshState();
+      }
+    });
+  }
 
   // Navigation Tabs Switching
   tabOpenView.addEventListener('click', () => {
@@ -213,11 +261,58 @@ document.addEventListener('DOMContentLoaded', async () => {
   }
 
   /**
+   * Updates Select All checkbox state, count badge, and bulk action bar
+   */
+  function updateSelectionUI(filteredTabs = []) {
+    const selectedFilteredCount = filteredTabs.filter((t) => selectedTabIds.has(t.id)).length;
+    const totalSelected = selectedTabIds.size;
+
+    if (selectAllCheckbox) {
+      if (filteredTabs.length === 0) {
+        selectAllCheckbox.checked = false;
+        selectAllCheckbox.indeterminate = false;
+        selectAllCheckbox.disabled = true;
+      } else {
+        selectAllCheckbox.disabled = false;
+        selectAllCheckbox.checked = selectedFilteredCount === filteredTabs.length;
+        selectAllCheckbox.indeterminate = selectedFilteredCount > 0 && selectedFilteredCount < filteredTabs.length;
+      }
+    }
+
+    if (selectedCountBadge) {
+      if (totalSelected > 0) {
+        selectedCountBadge.textContent = `${totalSelected} selected`;
+        selectedCountBadge.classList.remove('hidden');
+      } else {
+        selectedCountBadge.classList.add('hidden');
+      }
+    }
+
+    if (selectionActionBar) {
+      if (totalSelected > 0) {
+        selectionActionBar.classList.remove('hidden');
+        if (closeSelectedCount) closeSelectedCount.textContent = totalSelected;
+      } else {
+        selectionActionBar.classList.add('hidden');
+      }
+    }
+  }
+
+  /**
    * Renders open tab groups and tabs list
    */
   async function renderOpenTabs(filterQuery = '') {
     const tabs = await chrome.tabs.query({ windowId: currentWindowId });
     const groups = await chrome.tabGroups.query({ windowId: currentWindowId });
+
+    // Prune selectedTabIds and openSummaryTabIds for tabs that no longer exist
+    const allTabIds = new Set(tabs.map((t) => t.id));
+    selectedTabIds.forEach((id) => {
+      if (!allTabIds.has(id)) selectedTabIds.delete(id);
+    });
+    openSummaryTabIds.forEach((id) => {
+      if (!allTabIds.has(id)) openSummaryTabIds.delete(id);
+    });
 
     const { staleHours = 4, staleDirection = 'older' } = await chrome.storage.local.get(['staleHours', 'staleDirection']);
     const STALE_THRESHOLD_MS = staleHours * 60 * 60 * 1000;
@@ -235,6 +330,9 @@ document.addEventListener('DOMContentLoaded', async () => {
     const filteredTabs = filterQuery
       ? tabs.filter((t) => (t.title && t.title.toLowerCase().includes(filterQuery)) || (t.url && t.url.toLowerCase().includes(filterQuery)))
       : tabs;
+
+    currentFilteredTabs = filteredTabs;
+    updateSelectionUI(filteredTabs);
 
     if (filteredTabs.length === 0) {
       tabsContainer.innerHTML = filterQuery
@@ -332,14 +430,37 @@ document.addEventListener('DOMContentLoaded', async () => {
    */
   function createTabRow(tab) {
     const row = document.createElement('div');
-    row.className = `tab-item ${tab.active ? 'active-tab' : ''}`;
+    const isSelected = selectedTabIds.has(tab.id);
+    row.className = `tab-item ${tab.active ? 'active-tab' : ''} ${isSelected ? 'selected-tab' : ''}`;
+
+    // Selection Checkbox
+    const checkbox = document.createElement('input');
+    checkbox.type = 'checkbox';
+    checkbox.className = 'tab-select-checkbox';
+    checkbox.checked = isSelected;
+    checkbox.title = 'Select tab';
+
+    checkbox.addEventListener('click', (e) => {
+      e.stopPropagation();
+    });
+
+    checkbox.addEventListener('change', () => {
+      if (checkbox.checked) {
+        selectedTabIds.add(tab.id);
+        row.classList.add('selected-tab');
+      } else {
+        selectedTabIds.delete(tab.id);
+        row.classList.remove('selected-tab');
+      }
+      updateSelectionUI(currentFilteredTabs);
+    });
 
     const main = document.createElement('div');
     main.className = 'tab-main';
 
     const favicon = document.createElement('img');
     favicon.className = 'tab-favicon';
-    favicon.src = tab.favIconUrl || 'data:image/svg+xml;utf8,<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="%2394a3b8" stroke-width="2"><circle cx="12" cy="12" r="10"/><path d="M12 2a15.3 15.3 0 0 1 4 10 15.3 15.3 0 0 1-4 10 15.3 15.3 0 0 1-4-10 15.3 15.3 0 0 1 4-10z"/></svg>';
+    favicon.src = tab.favIconUrl || 'data:image/svg+xml;utf8,<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="%2394a3b8" stroke-width="2"><circle cx="12" cy="12" r="10"/><path d="M12 2a15.3 15.3 0 0 1 4 10 15.3 15.3 0 0 1-4 10 15.3 15.3 0 0 1-4 10 15.3 15.3 0 0 1 4-10z"/></svg>';
     favicon.onerror = () => {
       favicon.src = 'data:image/svg+xml;utf8,<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="%2394a3b8" stroke-width="2"><circle cx="12" cy="12" r="10"/></svg>';
     };
@@ -369,6 +490,55 @@ document.addEventListener('DOMContentLoaded', async () => {
     const actions = document.createElement('div');
     actions.className = 'tab-actions';
 
+    // Summary Button & Panel
+    const summaryBtn = document.createElement('button');
+    summaryBtn.className = 'action-icon summary-icon';
+    summaryBtn.title = 'Get tab content summary';
+    summaryBtn.innerHTML = '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="16" y1="13" x2="8" y2="13"/><line x1="16" y1="17" x2="8" y2="17"/><polyline points="10 9 9 9 8 9"/></svg>';
+
+    const summaryPanel = document.createElement('div');
+    summaryPanel.className = 'tab-summary-panel hidden';
+
+    // If this tab's summary was previously opened, restore its state on re-render!
+    if (openSummaryTabIds.has(tab.id)) {
+      summaryPanel.classList.remove('hidden');
+      summaryBtn.classList.add('active');
+      const cached = TabSummarizer.cache.get(`${tab.id}:${tab.url}`);
+      if (cached) {
+        renderSummaryPanel(cached, summaryPanel);
+      } else {
+        summaryPanel.innerHTML = '<div class="summary-loading"><span class="spinner"></span> Summarizing...</div>';
+        TabSummarizer.getSummary(tab).then((summary) => {
+          renderSummaryPanel(summary, summaryPanel);
+        }).catch((err) => {
+          summaryPanel.innerHTML = `<div class="summary-loading" style="color: var(--danger-color);">Failed to summarize: ${escapeHtml(err.message)}</div>`;
+        });
+      }
+    }
+
+    summaryBtn.addEventListener('click', async (e) => {
+      e.stopPropagation();
+      const isHidden = summaryPanel.classList.contains('hidden');
+      if (!isHidden) {
+        summaryPanel.classList.add('hidden');
+        summaryBtn.classList.remove('active');
+        openSummaryTabIds.delete(tab.id);
+        return;
+      }
+
+      openSummaryTabIds.add(tab.id);
+      summaryPanel.innerHTML = '<div class="summary-loading"><span class="spinner"></span> Summarizing...</div>';
+      summaryPanel.classList.remove('hidden');
+      summaryBtn.classList.add('active');
+
+      try {
+        const summary = await TabSummarizer.getSummary(tab);
+        renderSummaryPanel(summary, summaryPanel);
+      } catch (err) {
+        summaryPanel.innerHTML = `<div class="summary-loading" style="color: var(--danger-color);">Failed to summarize: ${escapeHtml(err.message)}</div>`;
+      }
+    });
+
     const closeBtn = document.createElement('button');
     closeBtn.className = 'action-icon close-icon';
     closeBtn.title = 'Close tab';
@@ -376,16 +546,56 @@ document.addEventListener('DOMContentLoaded', async () => {
 
     closeBtn.addEventListener('click', async (e) => {
       e.stopPropagation();
+      selectedTabIds.delete(tab.id);
       await chrome.tabs.remove(tab.id);
       row.remove();
+      summaryPanel.remove();
       refreshState();
     });
 
+    actions.appendChild(summaryBtn);
     actions.appendChild(closeBtn);
+    row.appendChild(checkbox);
     row.appendChild(main);
     row.appendChild(actions);
 
-    return row;
+    const wrapper = document.createDocumentFragment();
+    wrapper.appendChild(row);
+    wrapper.appendChild(summaryPanel);
+
+    return wrapper;
+  }
+
+  /**
+   * Renders the summary content inside a tab's summaryPanel in popup
+   */
+  function renderSummaryPanel(summary, container) {
+    const headingsHtml = summary.headings && summary.headings.length > 0
+      ? `<div class="summary-section">
+           <span class="summary-section-title">Key Topics:</span>
+           <ul class="summary-headings-list">
+             ${summary.headings.slice(0, 3).map((h) => `<li>${escapeHtml(h)}</li>`).join('')}
+           </ul>
+         </div>`
+      : '';
+
+    const badgeHtml = summary.siteBadge
+      ? `<span class="detail-badge badge-site-special">${escapeHtml(summary.siteBadge.text)}</span>`
+      : '';
+
+    container.innerHTML = `
+      <div class="summary-content">
+        <div class="summary-header-row">
+          <span class="summary-label">✨ Summary</span>
+          <div class="summary-badges">
+            ${badgeHtml}
+            <span class="detail-badge">${escapeHtml(summary.insights.contentType)}</span>
+          </div>
+        </div>
+        <p class="summary-overview-text">${escapeHtml(summary.overview)}</p>
+        ${headingsHtml}
+      </div>
+    `;
   }
 
   /**
