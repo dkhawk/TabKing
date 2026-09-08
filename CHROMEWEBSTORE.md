@@ -21,9 +21,11 @@ Whether you're juggling dozens of tabs for deep work, software engineering, acad
 #### Key Features
 * ⚡ **Automated Tab Grouping Rules**: Set up custom domain or regex URL patterns (e.g. `google.com/search`, `github.com`, `docs.google.com`) to instantly group tabs into custom named & color-coded native tab groups.
 * 🌐 **Dynamic Domain Fallback**: Unhandled tabs are automatically grouped by hostname domain with a single click.
+* 📸 **On-Demand Visual Tab Thumbnails & Preview Lightbox**: Capture high-resolution tab screenshots on demand with zero browser disruption. Open the interactive Preview Modal to inspect full-size tab captures, live memory/audio status, and page content summaries.
+* 🖼️ **Bulk "Add All Thumbnails" Capture**: Capture thumbnails for all filtered or selected tabs with a single click. Background orchestrator sequentially activates, captures, and restores tabs cleanly, compressing images via OffscreenCanvas to prevent storage bloat.
 * 💾 **Session Saver & RAM Saver**: Save active tab groups and windows as persistent sessions in local storage. Close open tabs to free up system memory, and restore full workspaces with intact titles and group colors whenever you're ready.
 * 🔍 **Instant Tab Search**: Filter all open tabs across your current browser window by title, domain, or group tag. Jump directly to any tab or close it from the search view.
-* ⌨️ **Keyboard Shortcut Shortcuts**: Auto-group open tabs anytime using `Ctrl+Shift+G` (or `Cmd+Shift+G` on Mac) or open the TabKing popup with `Cmd+Shift+K`.
+* ⌨️ **Keyboard Shortcuts**: Auto-group open tabs anytime using `Ctrl+Shift+G` (or `Cmd+Shift+G` on Mac) or open the TabKing popup with `Cmd+Shift+K`.
 * 🔒 **100% Private & Local**: All rule matching, session snapshots, and settings stay completely local on your device via Chrome extension storage. No tracking, external servers, or data collection.
 
 ---
@@ -36,7 +38,9 @@ Every permission declared in `manifest.json` is strictly required for core funct
 | :--- | :--- |
 | **`tabs`** | Required to read open tab titles, URLs, and favicons in order to match grouping rules, allow real-time tab searching, and save/restore tab sessions. |
 | **`tabGroups`** | Required to programmatically create native Chrome Tab Groups, customize group titles and colors, and toggle collapsed/expanded group states. |
-| **`storage`** | Required to store custom user grouping rules, saved tab session snapshots, and user preferences locally in browser storage (`chrome.storage.local`). |
+| **`storage`** | Required to store custom user grouping rules, saved tab session snapshots, compressed tab thumbnails, and user preferences locally in browser storage (`chrome.storage.local`). |
+| **`scripting`** | Required to safely read page article outlines and structured metadata in active tabs to power intelligent tab summaries without transmitting page data externally. |
+| **`<all_urls>`** (host) | Required to capture tab screenshots via `chrome.tabs.captureVisibleTab` across user-selected web domains. |
 
 ---
 
@@ -49,6 +53,12 @@ Every permission declared in `manifest.json` is strictly required for core funct
 ---
 
 ## 4. Version History
+
+### v1.1.0 (2026-09-08)
+* Added on-demand tab thumbnail previews across Visual Tab Finder and popup UI.
+* Added interactive Full Tab Preview Lightbox dialog with real-time memory/audio badges and content summaries.
+* Added bulk "Add All Thumbnails" and "Add Selected Thumbnails" batch capture with non-disruptive tab activation and OffscreenCanvas compression.
+* Added multi-tab selection action bar with thumbnail capture and bulk close support.
 
 ### v1.0.0 (2026-07-15)
 * Initial public release of TabKing.

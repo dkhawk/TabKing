@@ -1,3 +1,4 @@
+// Copyright 2026 Google LLC
 /**
  * TabKing Tab Summarizer Engine
  * Extracts page content via chrome.scripting.executeScript and generates

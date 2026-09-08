@@ -1,3 +1,4 @@
+// Copyright 2026 Google LLC
 /**
  * TabKing Popup Script
  */
@@ -41,6 +42,7 @@ document.addEventListener('DOMContentLoaded', async () => {
   // Selection & Summary State
   const selectedTabIds = new Set();
   const openSummaryTabIds = new Set();
+  const openThumbnailTabIds = new Set();
   let currentFilteredTabs = [];
 
   // Selection Elements
@@ -51,7 +53,47 @@ document.addEventListener('DOMContentLoaded', async () => {
   const closeSelectedCount = document.getElementById('closeSelectedCount');
   const deselectAllBtn = document.getElementById('deselectAllBtn');
 
+  // Batch Thumbnail Elements
+  const addAllThumbnailsPopupBtn = document.getElementById('addAllThumbnailsPopupBtn');
+  const addAllThumbnailsPopupText = document.getElementById('addAllThumbnailsPopupText');
+  const addSelectedThumbnailsPopupBtn = document.getElementById('addSelectedThumbnailsPopupBtn');
+
   let currentWindowId = null;
+
+  const addThumbnailsBatch = async (targetTabs) => {
+    if (!targetTabs || targetTabs.length === 0) return;
+    const tabIds = targetTabs.map((t) => t.id);
+    if (addAllThumbnailsPopupBtn) addAllThumbnailsPopupBtn.disabled = true;
+    if (addAllThumbnailsPopupText) addAllThumbnailsPopupText.textContent = `Capturing (${tabIds.length})...`;
+
+    try {
+      await chrome.runtime.sendMessage({ action: 'CAPTURE_TABS_BATCH', tabIds });
+      await refreshState();
+    } catch (err) {
+      console.error('Batch capture error in popup:', err);
+    } finally {
+      if (addAllThumbnailsPopupBtn) addAllThumbnailsPopupBtn.disabled = false;
+      if (addAllThumbnailsPopupText) {
+        addAllThumbnailsPopupText.textContent = 'Done!';
+        setTimeout(() => {
+          updateSelectionUI(currentFilteredTabs);
+        }, 1500);
+      }
+    }
+  };
+
+  if (addAllThumbnailsPopupBtn) {
+    addAllThumbnailsPopupBtn.addEventListener('click', () => {
+      addThumbnailsBatch(currentFilteredTabs);
+    });
+  }
+
+  if (addSelectedThumbnailsPopupBtn) {
+    addSelectedThumbnailsPopupBtn.addEventListener('click', () => {
+      const selected = currentFilteredTabs.filter((t) => selectedTabIds.has(t.id));
+      addThumbnailsBatch(selected.length > 0 ? selected : currentFilteredTabs);
+    });
+  }
 
   // Initialize
   const windowInfo = await chrome.windows.getLastFocused();
@@ -296,6 +338,20 @@ document.addEventListener('DOMContentLoaded', async () => {
         selectionActionBar.classList.add('hidden');
       }
     }
+
+    if (addAllThumbnailsPopupBtn && addAllThumbnailsPopupText) {
+      if (filteredTabs.length === 0) {
+        addAllThumbnailsPopupBtn.disabled = true;
+        addAllThumbnailsPopupText.textContent = 'Add Thumbnails';
+      } else {
+        addAllThumbnailsPopupBtn.disabled = false;
+        if (totalSelected > 0) {
+          addAllThumbnailsPopupText.textContent = `Add Selected (${totalSelected})`;
+        } else {
+          addAllThumbnailsPopupText.textContent = `Add All (${filteredTabs.length})`;
+        }
+      }
+    }
   }
 
   /**
@@ -305,13 +361,16 @@ document.addEventListener('DOMContentLoaded', async () => {
     const tabs = await chrome.tabs.query({ windowId: currentWindowId });
     const groups = await chrome.tabGroups.query({ windowId: currentWindowId });
 
-    // Prune selectedTabIds and openSummaryTabIds for tabs that no longer exist
+    // Prune selectedTabIds, openSummaryTabIds, and openThumbnailTabIds for closed tabs
     const allTabIds = new Set(tabs.map((t) => t.id));
     selectedTabIds.forEach((id) => {
       if (!allTabIds.has(id)) selectedTabIds.delete(id);
     });
     openSummaryTabIds.forEach((id) => {
       if (!allTabIds.has(id)) openSummaryTabIds.delete(id);
+    });
+    openThumbnailTabIds.forEach((id) => {
+      if (!allTabIds.has(id)) openThumbnailTabIds.delete(id);
     });
 
     const { staleHours = 4, staleDirection = 'older' } = await chrome.storage.local.get(['staleHours', 'staleDirection']);
@@ -490,6 +549,107 @@ document.addEventListener('DOMContentLoaded', async () => {
     const actions = document.createElement('div');
     actions.className = 'tab-actions';
 
+    // Thumbnail Preview Button & Drawer
+    const thumbnailBtn = document.createElement('button');
+    thumbnailBtn.className = 'action-icon thumbnail-icon';
+    thumbnailBtn.title = 'Preview tab thumbnail';
+    thumbnailBtn.innerHTML = '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="18" height="18" rx="2"/><circle cx="8.5" cy="8.5" r="1.5"/><polyline points="21 15 16 10 5 21"/></svg>';
+
+    const thumbnailPanel = document.createElement('div');
+    thumbnailPanel.className = 'tab-thumbnail-panel hidden';
+
+    const renderThumbnailPanel = (thumbDataUrl) => {
+      thumbnailPanel.innerHTML = `
+        <div class="popup-thumb-container">
+          ${thumbDataUrl
+            ? `<div class="popup-thumb-wrapper">
+                 <img class="popup-thumb-img" src="${thumbDataUrl}" alt="${escapeHtml(tab.title || 'Tab Preview')}">
+                 <div class="popup-thumb-actions">
+                   <button class="small-btn popup-thumb-refresh-btn" title="Retake snapshot">🔄 Retake</button>
+                   <button class="small-btn popup-thumb-finder-btn" title="Open full visual tab view">🔍 Full View</button>
+                 </div>
+               </div>`
+            : `<div class="popup-thumb-empty">
+                 <span style="font-size: 11px; color: var(--text-dim);">No thumbnail captured yet.</span>
+                 <button class="btn secondary-btn small-btn popup-capture-btn" style="padding: 4px 8px; font-size: 11px;">
+                   📸 Capture Thumbnail
+                 </button>
+               </div>`
+          }
+        </div>
+      `;
+
+      const refreshBtn = thumbnailPanel.querySelector('.popup-thumb-refresh-btn');
+      if (refreshBtn) {
+        refreshBtn.addEventListener('click', async (e) => {
+          e.stopPropagation();
+          refreshBtn.disabled = true;
+          refreshBtn.textContent = '...';
+          try {
+            const res = await chrome.runtime.sendMessage({ action: 'CAPTURE_TAB_THUMBNAIL', tabId: tab.id });
+            if (res && res.dataUrl) {
+              renderThumbnailPanel(res.dataUrl);
+            }
+          } finally {
+            refreshBtn.disabled = false;
+          }
+        });
+      }
+
+      const captureBtn = thumbnailPanel.querySelector('.popup-capture-btn');
+      if (captureBtn) {
+        captureBtn.addEventListener('click', async (e) => {
+          e.stopPropagation();
+          captureBtn.disabled = true;
+          captureBtn.textContent = 'Capturing...';
+          try {
+            const res = await chrome.runtime.sendMessage({ action: 'CAPTURE_TAB_THUMBNAIL', tabId: tab.id });
+            if (res && res.dataUrl) {
+              renderThumbnailPanel(res.dataUrl);
+            } else {
+              captureBtn.textContent = 'Capture failed';
+            }
+          } catch {
+            captureBtn.textContent = 'Error';
+          }
+        });
+      }
+
+      const finderBtn = thumbnailPanel.querySelector('.popup-thumb-finder-btn');
+      if (finderBtn) {
+        finderBtn.addEventListener('click', (e) => {
+          e.stopPropagation();
+          chrome.tabs.create({ url: chrome.runtime.getURL('finder/finder.html') });
+        });
+      }
+    };
+
+    if (openThumbnailTabIds.has(tab.id)) {
+      thumbnailPanel.classList.remove('hidden');
+      thumbnailBtn.classList.add('active');
+      chrome.storage.local.get('thumbnails').then(({ thumbnails = {} }) => {
+        renderThumbnailPanel(thumbnails[tab.url]);
+      });
+    }
+
+    thumbnailBtn.addEventListener('click', async (e) => {
+      e.stopPropagation();
+      const isHidden = thumbnailPanel.classList.contains('hidden');
+      if (!isHidden) {
+        thumbnailPanel.classList.add('hidden');
+        thumbnailBtn.classList.remove('active');
+        openThumbnailTabIds.delete(tab.id);
+        return;
+      }
+
+      openThumbnailTabIds.add(tab.id);
+      thumbnailPanel.classList.remove('hidden');
+      thumbnailBtn.classList.add('active');
+
+      const { thumbnails = {} } = await chrome.storage.local.get('thumbnails');
+      renderThumbnailPanel(thumbnails[tab.url]);
+    });
+
     // Summary Button & Panel
     const summaryBtn = document.createElement('button');
     summaryBtn.className = 'action-icon summary-icon';
@@ -547,12 +707,16 @@ document.addEventListener('DOMContentLoaded', async () => {
     closeBtn.addEventListener('click', async (e) => {
       e.stopPropagation();
       selectedTabIds.delete(tab.id);
+      openThumbnailTabIds.delete(tab.id);
+      openSummaryTabIds.delete(tab.id);
       await chrome.tabs.remove(tab.id);
       row.remove();
+      thumbnailPanel.remove();
       summaryPanel.remove();
       refreshState();
     });
 
+    actions.appendChild(thumbnailBtn);
     actions.appendChild(summaryBtn);
     actions.appendChild(closeBtn);
     row.appendChild(checkbox);
@@ -561,6 +725,7 @@ document.addEventListener('DOMContentLoaded', async () => {
 
     const wrapper = document.createDocumentFragment();
     wrapper.appendChild(row);
+    wrapper.appendChild(thumbnailPanel);
     wrapper.appendChild(summaryPanel);
 
     return wrapper;

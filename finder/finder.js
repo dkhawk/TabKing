@@ -1,3 +1,4 @@
+// Copyright 2026 Google LLC
 /**
  * TabKing Visual Tab Finder & Advanced Search Script
  */
@@ -40,7 +41,24 @@ document.addEventListener('DOMContentLoaded', async () => {
   const selectedCountBadge = document.getElementById('selectedCountBadge');
   const closeSelectedBtn = document.getElementById('closeSelectedBtn');
   const closeSelectedCount = document.getElementById('closeSelectedCount');
-  
+  const addAllThumbnailsBtn = document.getElementById('addAllThumbnailsBtn');
+  const addAllThumbnailsText = document.getElementById('addAllThumbnailsText');
+
+  // Preview Modal Elements
+  const tabPreviewModal = document.getElementById('tabPreviewModal');
+  const previewFavicon = document.getElementById('previewFavicon');
+  const previewTitle = document.getElementById('previewTitle');
+  const previewUrl = document.getElementById('previewUrl');
+  const previewImg = document.getElementById('previewImg');
+  const previewImgLoading = document.getElementById('previewImgLoading');
+  const previewMetaRow = document.getElementById('previewMetaRow');
+  const previewSummaryContainer = document.getElementById('previewSummaryContainer');
+  const closePreviewModalBtn = document.getElementById('closePreviewModalBtn');
+  const previewRefreshBtn = document.getElementById('previewRefreshBtn');
+  const previewCloseTabBtn = document.getElementById('previewCloseTabBtn');
+  const previewJumpBtn = document.getElementById('previewJumpBtn');
+  let activePreviewTabId = null;
+
   const selectedTabIds = new Set();
   const openSummaryTabIds = new Set();
   let currentFilteredTabs = [];
@@ -51,6 +69,128 @@ document.addEventListener('DOMContentLoaded', async () => {
   let activeFilterCategory = 'all';
   let isGridView = true;
   let currentWindowId = null;
+
+  // Add All / Add Selected Thumbnails Batch Action
+  if (addAllThumbnailsBtn) {
+    addAllThumbnailsBtn.addEventListener('click', async () => {
+      const targetTabs = selectedTabIds.size > 0
+        ? currentFilteredTabs.filter((t) => selectedTabIds.has(t.id))
+        : currentFilteredTabs;
+
+      if (targetTabs.length === 0) return;
+
+      const tabIds = targetTabs.map((t) => t.id);
+      const total = tabIds.length;
+
+      addAllThumbnailsBtn.disabled = true;
+      const originalText = addAllThumbnailsText ? addAllThumbnailsText.textContent : 'Add All Thumbnails';
+      if (addAllThumbnailsText) {
+        addAllThumbnailsText.textContent = `Capturing ${total} tab${total > 1 ? 's' : ''}...`;
+      }
+
+      try {
+        const response = await chrome.runtime.sendMessage({
+          action: 'CAPTURE_TABS_BATCH',
+          tabIds
+        });
+
+        if (response && response.thumbnails) {
+          thumbnailsMap = response.thumbnails;
+        } else {
+          const { thumbnails = {} } = await chrome.storage.local.get('thumbnails');
+          thumbnailsMap = thumbnails;
+        }
+
+        updateCounts();
+        renderCards();
+      } catch (err) {
+        console.error('Error capturing thumbnails batch:', err);
+      } finally {
+        addAllThumbnailsBtn.disabled = false;
+        if (addAllThumbnailsText) {
+          addAllThumbnailsText.textContent = `Added ${total} Thumbnails!`;
+          setTimeout(() => {
+            updateSelectionUI(currentFilteredTabs);
+          }, 1800);
+        }
+      }
+    });
+  }
+
+  // Preview Modal Listeners
+  if (closePreviewModalBtn && tabPreviewModal) {
+    closePreviewModalBtn.addEventListener('click', () => {
+      tabPreviewModal.close();
+      activePreviewTabId = null;
+    });
+
+    tabPreviewModal.addEventListener('click', (e) => {
+      const rect = tabPreviewModal.getBoundingClientRect();
+      const isInDialog = (rect.top <= e.clientY && e.clientY <= rect.top + rect.height &&
+        rect.left <= e.clientX && e.clientX <= rect.left + rect.width);
+      if (!isInDialog) {
+        tabPreviewModal.close();
+        activePreviewTabId = null;
+      }
+    });
+  }
+
+  if (previewRefreshBtn) {
+    previewRefreshBtn.addEventListener('click', async () => {
+      if (!activePreviewTabId) return;
+      const tabId = activePreviewTabId;
+      previewRefreshBtn.disabled = true;
+      if (previewImgLoading) {
+        previewImgLoading.classList.remove('hidden');
+        previewImgLoading.innerHTML = '<span class="spinner"></span> Retaking screenshot...';
+      }
+      try {
+        const res = await chrome.runtime.sendMessage({ action: 'CAPTURE_TAB_THUMBNAIL', tabId });
+        if (res && res.dataUrl) {
+          previewImg.src = res.dataUrl;
+          previewImg.classList.remove('hidden');
+          if (previewImgLoading) previewImgLoading.classList.add('hidden');
+          const tab = openTabs.find((t) => t.id === tabId);
+          if (tab) thumbnailsMap[tab.url] = res.dataUrl;
+          updateCounts();
+          renderCards();
+        }
+      } catch (err) {
+        if (previewImgLoading) previewImgLoading.textContent = `Retake failed: ${err.message}`;
+      } finally {
+        previewRefreshBtn.disabled = false;
+      }
+    });
+  }
+
+  if (previewJumpBtn) {
+    previewJumpBtn.addEventListener('click', async () => {
+      if (!activePreviewTabId) return;
+      const tab = openTabs.find((t) => t.id === activePreviewTabId);
+      if (tab) {
+        tabPreviewModal.close();
+        try {
+          await chrome.tabs.update(tab.id, { active: true });
+          await chrome.windows.update(tab.windowId, { focused: true });
+        } catch {}
+      }
+    });
+  }
+
+  if (previewCloseTabBtn) {
+    previewCloseTabBtn.addEventListener('click', async () => {
+      if (!activePreviewTabId) return;
+      const tabId = activePreviewTabId;
+      tabPreviewModal.close();
+      try {
+        await chrome.tabs.remove(tabId);
+      } catch {}
+      openTabs = openTabs.filter((t) => t.id !== tabId);
+      selectedTabIds.delete(tabId);
+      updateCounts();
+      renderCards();
+    });
+  }
 
   // Selection Listeners
   if (selectAllCheckbox) {
@@ -499,6 +639,129 @@ document.addEventListener('DOMContentLoaded', async () => {
         closeSelectedBtn.classList.add('hidden');
       }
     }
+
+    if (addAllThumbnailsBtn && addAllThumbnailsText) {
+      if (filteredTabs.length === 0) {
+        addAllThumbnailsBtn.disabled = true;
+        addAllThumbnailsText.textContent = 'Add All Thumbnails';
+      } else {
+        addAllThumbnailsBtn.disabled = false;
+        if (totalSelected > 0) {
+          addAllThumbnailsText.textContent = `Add Selected (${totalSelected})`;
+          addAllThumbnailsBtn.title = `Capture and add thumbnails for ${totalSelected} selected tabs`;
+        } else {
+          addAllThumbnailsText.textContent = `Add All Thumbnails (${filteredTabs.length})`;
+          addAllThumbnailsBtn.title = `Capture and add thumbnails for all ${filteredTabs.length} tabs in the current list`;
+        }
+      }
+    }
+  }
+
+  /**
+   * Opens the rich visual Tab Preview Modal / Lightbox for a tab.
+   * Shows high-res snapshot, domain metadata, RAM status, and content summary.
+   */
+  async function openTabPreviewModal(tab, initialDataUrl = null) {
+    if (!tabPreviewModal) return;
+    activePreviewTabId = tab.id;
+
+    previewTitle.textContent = tab.title || tab.url || 'Tab Preview';
+    previewUrl.textContent = tab.url || '';
+    previewFavicon.src = tab.favIconUrl || '../icons/icon-16.png';
+    previewFavicon.onerror = () => { previewFavicon.src = '../icons/icon-16.png'; };
+
+    const currentDataUrl = initialDataUrl || thumbnailsMap[tab.url];
+    if (currentDataUrl) {
+      previewImg.src = currentDataUrl;
+      previewImg.classList.remove('hidden');
+      if (previewImgLoading) previewImgLoading.classList.add('hidden');
+    } else {
+      previewImg.src = '';
+      previewImg.classList.add('hidden');
+      if (previewImgLoading) {
+        previewImgLoading.classList.remove('hidden');
+        previewImgLoading.innerHTML = '<span class="spinner"></span> Capturing tab preview on demand...';
+      }
+
+      chrome.runtime.sendMessage({ action: 'CAPTURE_TAB_THUMBNAIL', tabId: tab.id }).then((res) => {
+        if (activePreviewTabId === tab.id && res && res.dataUrl) {
+          previewImg.src = res.dataUrl;
+          previewImg.classList.remove('hidden');
+          if (previewImgLoading) previewImgLoading.classList.add('hidden');
+          thumbnailsMap[tab.url] = res.dataUrl;
+          updateCounts();
+          renderCards();
+        }
+      }).catch(() => {
+        if (activePreviewTabId === tab.id && previewImgLoading) {
+          previewImgLoading.textContent = 'Could not capture thumbnail for this tab.';
+        }
+      });
+    }
+
+    const tags = [];
+    const domainStr = getTabDomain(tab.url) || 'Web Page';
+    tags.push(`<span class="detail-badge">${escapeHtml(domainStr)}</span>`);
+
+    if (tab.lastAccessed) {
+      tags.push(`<span class="detail-badge">🕒 Last active ${formatRelativeTime(tab.lastAccessed)}</span>`);
+    }
+
+    const group = nativeGroupsMap.get(tab.groupId);
+    if (group) {
+      tags.push(`
+        <span class="card-group-pill-inline">
+          <span class="pill-dot ${group.color || 'blue'}"></span>
+          <span>${escapeHtml(group.title || 'Group')}</span>
+        </span>
+      `);
+    }
+
+    if (tab.windowId !== currentWindowId) {
+      tags.push(`<span class="window-tag-inline">Window #${tab.windowId}</span>`);
+    }
+
+    if (tab.discarded) {
+      tags.push(`<span class="detail-badge badge-sleeping-ram">💤 Sleeping in RAM</span>`);
+    } else {
+      tags.push(`<span class="detail-badge badge-active-ram">⚡ Active Memory</span>`);
+    }
+
+    if (tab.audible) {
+      tags.push(`<span class="detail-badge badge-audio">🔊 Playing Audio</span>`);
+    }
+
+    if (previewMetaRow) previewMetaRow.innerHTML = tags.join('');
+
+    if (previewSummaryContainer) {
+      const cachedSummary = TabSummarizer.cache.get(`${tab.id}:${tab.url}`);
+      if (cachedSummary) {
+        renderSummaryPanel(cachedSummary, previewSummaryContainer);
+      } else {
+        previewSummaryContainer.innerHTML = `
+          <div style="display: flex; align-items: center; justify-content: space-between; padding: 6px 0;">
+            <span style="font-size: 11px; color: var(--text-dim);">Tab content overview available</span>
+            <button id="modalFetchSummaryBtn" class="btn secondary-btn small-btn" style="padding: 4px 8px; font-size: 11px;">
+              ✨ Generate Summary
+            </button>
+          </div>
+        `;
+        const fetchBtn = document.getElementById('modalFetchSummaryBtn');
+        if (fetchBtn) {
+          fetchBtn.addEventListener('click', async () => {
+            previewSummaryContainer.innerHTML = '<div class="summary-loading"><span class="spinner"></span> Summarizing tab content...</div>';
+            try {
+              const summary = await TabSummarizer.getSummary(tab);
+              renderSummaryPanel(summary, previewSummaryContainer);
+            } catch (err) {
+              previewSummaryContainer.innerHTML = `<div class="summary-loading" style="color: var(--danger-color);">Summary failed: ${escapeHtml(err.message)}</div>`;
+            }
+          });
+        }
+      }
+    }
+
+    tabPreviewModal.showModal();
   }
 
   /**
@@ -532,7 +795,7 @@ document.addEventListener('DOMContentLoaded', async () => {
   }
 
   /**
-   * Helper to construct a single visual tab preview card with clean 6-line hierarchy
+   * Helper to construct a single visual tab preview card with clean hierarchy
    */
   function createVisualTabCard(tab) {
     const card = document.createElement('div');
@@ -621,25 +884,88 @@ document.addEventListener('DOMContentLoaded', async () => {
       img.className = 'thumb-img';
       img.src = thumbnailDataUrl;
       img.alt = tab.title || 'Tab Preview';
+
+      const overlay = document.createElement('div');
+      overlay.className = 'thumb-overlay';
+      overlay.innerHTML = `
+        <button class="thumb-zoom-btn" title="Click to view full tab preview">
+          <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/><line x1="11" y1="8" x2="11" y2="14"/><line x1="8" y1="11" x2="14" y2="11"/></svg>
+          <span>Preview</span>
+        </button>
+        <button class="thumb-retake-btn" title="Retake screenshot">
+          <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M23 4v6h-6M1 20v-6h6"/><path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15"/></svg>
+        </button>
+      `;
+
+      overlay.querySelector('.thumb-zoom-btn').addEventListener('click', (e) => {
+        e.stopPropagation();
+        openTabPreviewModal(tab, thumbnailDataUrl);
+      });
+
+      overlay.querySelector('.thumb-retake-btn').addEventListener('click', async (e) => {
+        e.stopPropagation();
+        const retakeBtn = overlay.querySelector('.thumb-retake-btn');
+        retakeBtn.disabled = true;
+        retakeBtn.innerHTML = '<span class="spinner" style="width: 10px; height: 10px;"></span>';
+        try {
+          const res = await chrome.runtime.sendMessage({ action: 'CAPTURE_TAB_THUMBNAIL', tabId: tab.id });
+          if (res && res.dataUrl) {
+            thumbnailsMap[tab.url] = res.dataUrl;
+            img.src = res.dataUrl;
+            updateCounts();
+          }
+        } catch (err) {
+          console.error(err);
+        } finally {
+          retakeBtn.disabled = false;
+          retakeBtn.innerHTML = '<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M23 4v6h-6M1 20v-6h6"/><path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15"/></svg>';
+        }
+      });
+
       thumbWindow.appendChild(img);
+      thumbWindow.appendChild(overlay);
+
+      // Clicking anywhere on the thumbnail window opens the preview modal
+      thumbWindow.addEventListener('click', (e) => {
+        if (e.target.closest('.thumb-retake-btn')) return;
+        e.stopPropagation();
+        openTabPreviewModal(tab, thumbnailDataUrl);
+      });
     } else {
       const placeholder = document.createElement('div');
       placeholder.className = 'placeholder-thumb-rich';
       placeholder.innerHTML = `
-        <button class="capture-tab-btn" title="Focus tab & capture screenshot preview">📸 Snapshot</button>
+        <button class="capture-tab-btn" title="Capture and show thumbnail preview for this tab">
+          <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="18" height="18" rx="2"/><circle cx="8.5" cy="8.5" r="1.5"/><polyline points="21 15 16 10 5 21"/></svg>
+          <span>Show Thumbnail</span>
+        </button>
       `;
 
       placeholder.querySelector('.capture-tab-btn').addEventListener('click', async (e) => {
         e.stopPropagation();
+        const btn = placeholder.querySelector('.capture-tab-btn');
+        btn.disabled = true;
+        btn.innerHTML = '<span class="spinner" style="width: 12px; height: 12px;"></span> Capturing...';
         try {
-          await chrome.tabs.update(tab.id, { active: true });
-          await chrome.windows.update(tab.windowId, { focused: true });
-        } catch {
-          // Ignore closed tabs
+          const res = await chrome.runtime.sendMessage({ action: 'CAPTURE_TAB_THUMBNAIL', tabId: tab.id });
+          if (res && res.dataUrl) {
+            thumbnailsMap[tab.url] = res.dataUrl;
+            updateCounts();
+            renderCards();
+          } else {
+            btn.textContent = 'Capture failed';
+            setTimeout(() => {
+              btn.disabled = false;
+              btn.innerHTML = '<span>Show Thumbnail</span>';
+            }, 1500);
+          }
+        } catch (err) {
+          btn.textContent = 'Capture error';
+          setTimeout(() => {
+            btn.disabled = false;
+            btn.innerHTML = '<span>Show Thumbnail</span>';
+          }, 1500);
         }
-        await chrome.runtime.sendMessage({ action: 'CAPTURE_SNAPSHOTS' });
-        await new Promise((r) => setTimeout(r, 600));
-        await loadWorkspaceTabs();
       });
 
       thumbWindow.appendChild(placeholder);
@@ -686,7 +1012,7 @@ document.addEventListener('DOMContentLoaded', async () => {
 
     // Click Card Body to Jump to Tab
     card.addEventListener('click', async (e) => {
-      if (e.target.closest('.card-footer') || e.target.closest('button')) return;
+      if (e.target.closest('.card-footer') || e.target.closest('button') || e.target.closest('.thumbnail-window')) return;
       try {
         await chrome.tabs.update(tab.id, { active: true });
         await chrome.windows.update(tab.windowId, { focused: true });
@@ -699,11 +1025,21 @@ document.addEventListener('DOMContentLoaded', async () => {
     const footer = document.createElement('div');
     footer.className = 'card-footer';
 
+    // Preview Button (opens full preview modal)
+    const previewBtn = document.createElement('button');
+    previewBtn.className = 'action-btn preview-btn';
+    previewBtn.title = 'Preview tab contents in full modal';
+    previewBtn.innerHTML = '<svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/><line x1="11" y1="8" x2="11" y2="14"/><line x1="8" y1="11" x2="14" y2="11"/></svg> Preview';
+    previewBtn.addEventListener('click', (e) => {
+      e.stopPropagation();
+      openTabPreviewModal(tab, thumbnailDataUrl);
+    });
+
     // Summary Button & Panel
     const summaryBtn = document.createElement('button');
     summaryBtn.className = 'action-btn summary-btn';
     summaryBtn.title = 'Get AI-powered tab content summary';
-    summaryBtn.innerHTML = '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="16" y1="13" x2="8" y2="13"/><line x1="16" y1="17" x2="8" y2="17"/><polyline points="10 9 9 9 8 9"/></svg> Summary';
+    summaryBtn.innerHTML = '<svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="16" y1="13" x2="8" y2="13"/><line x1="16" y1="17" x2="8" y2="17"/><polyline points="10 9 9 9 8 9"/></svg> Summary';
 
     const summaryPanel = document.createElement('div');
     summaryPanel.className = 'tab-summary-panel hidden';
@@ -750,7 +1086,7 @@ document.addEventListener('DOMContentLoaded', async () => {
 
     const switchBtn = document.createElement('button');
     switchBtn.className = 'action-btn';
-    switchBtn.innerHTML = '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="15 3 21 3 21 9"/><polyline points="9 21 3 21 3 15"/><line x1="21" y1="3" x2="14" y2="10"/><line x1="3" y1="21" x2="10" y2="14"/></svg> Jump';
+    switchBtn.innerHTML = '<svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="15 3 21 3 21 9"/><polyline points="9 21 3 21 3 15"/><line x1="21" y1="3" x2="14" y2="10"/><line x1="3" y1="21" x2="10" y2="14"/></svg> Jump';
     switchBtn.addEventListener('click', async () => {
       try {
         await chrome.tabs.update(tab.id, { active: true });
@@ -762,7 +1098,7 @@ document.addEventListener('DOMContentLoaded', async () => {
 
     const closeBtn = document.createElement('button');
     closeBtn.className = 'action-btn danger';
-    closeBtn.innerHTML = '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg> Close';
+    closeBtn.innerHTML = '<svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg> Close';
     closeBtn.addEventListener('click', async (e) => {
       e.stopPropagation();
       try {
@@ -776,6 +1112,7 @@ document.addEventListener('DOMContentLoaded', async () => {
       renderCards();
     });
 
+    footer.appendChild(previewBtn);
     footer.appendChild(summaryBtn);
     footer.appendChild(switchBtn);
     footer.appendChild(closeBtn);

@@ -1,3 +1,4 @@
+// Copyright 2026 Google LLC
 /**
  * TabKing Service Worker - Manifest V3 Background Script
  */
@@ -69,18 +70,119 @@ chrome.tabs.onUpdated.addListener(async (tabId, changeInfo, tab) => {
   }
 });
 
+/**
+ * Compresses a screenshot data URL to a max width and quality using OffscreenCanvas.
+ * This keeps memory and chrome.storage.local usage minimal and fast.
+ */
+async function compressScreenshot(dataUrl, maxWidth = 500) {
+  try {
+    const res = await fetch(dataUrl);
+    const blob = await res.blob();
+    const bitmap = await createImageBitmap(blob);
+    const scale = Math.min(1, maxWidth / bitmap.width);
+    const width = Math.round(bitmap.width * scale);
+    const height = Math.round(bitmap.height * scale);
+
+    const canvas = new OffscreenCanvas(width, height);
+    const ctx = canvas.getContext('2d');
+    ctx.drawImage(bitmap, 0, 0, width, height);
+    bitmap.close();
+
+    const compressedBlob = await canvas.convertToBlob({ type: 'image/jpeg', quality: 0.55 });
+    const buffer = await compressedBlob.arrayBuffer();
+    const bytes = new Uint8Array(buffer);
+    let binary = '';
+    const chunkSize = 8192;
+    for (let i = 0; i < bytes.length; i += chunkSize) {
+      binary += String.fromCharCode.apply(null, bytes.subarray(i, i + chunkSize));
+    }
+    return `data:image/jpeg;base64,${btoa(binary)}`;
+  } catch (err) {
+    return dataUrl;
+  }
+}
+
+/**
+ * Generates an attractive Canvas preview card for restricted system tabs or sleeping tabs.
+ */
+async function generateMockupThumbnail(tab) {
+  try {
+    const width = 480;
+    const height = 270;
+    const canvas = new OffscreenCanvas(width, height);
+    const ctx = canvas.getContext('2d');
+
+    // Gradient background
+    const grad = ctx.createLinearGradient(0, 0, width, height);
+    grad.addColorStop(0, '#0f172a');
+    grad.addColorStop(1, '#1e293b');
+    ctx.fillStyle = grad;
+    ctx.fillRect(0, 0, width, height);
+
+    // Accent line
+    ctx.fillStyle = '#0284c7';
+    ctx.fillRect(0, 0, width, 4);
+
+    // Domain text
+    ctx.fillStyle = '#94a3b8';
+    ctx.font = 'bold 16px sans-serif';
+    let domain = 'Web Page';
+    try {
+      if (tab.url) domain = new URL(tab.url).hostname.replace(/^www\./, '');
+    } catch {}
+    ctx.fillText(domain, 30, 60);
+
+    // Title text
+    ctx.fillStyle = '#ffffff';
+    ctx.font = 'bold 20px sans-serif';
+    const title = (tab.title || tab.url || 'Tab Preview').substring(0, 42);
+    ctx.fillText(title, 30, 110);
+
+    // Status Badge
+    ctx.fillStyle = 'rgba(56, 189, 248, 0.2)';
+    ctx.fillRect(30, 150, 180, 34);
+    ctx.fillStyle = '#38bdf8';
+    ctx.font = '14px sans-serif';
+    const badgeText = tab.discarded ? '💤 Sleeping in RAM' : '🔒 Protected Page';
+    ctx.fillText(badgeText, 45, 172);
+
+    const compressedBlob = await canvas.convertToBlob({ type: 'image/jpeg', quality: 0.65 });
+    const buffer = await compressedBlob.arrayBuffer();
+    const bytes = new Uint8Array(buffer);
+    let binary = '';
+    const chunkSize = 8192;
+    for (let i = 0; i < bytes.length; i += chunkSize) {
+      binary += String.fromCharCode.apply(null, bytes.subarray(i, i + chunkSize));
+    }
+    return `data:image/jpeg;base64,${btoa(binary)}`;
+  } catch {
+    return null;
+  }
+}
+
 async function captureTabThumbnail(tabId, windowId) {
   try {
     const tab = await chrome.tabs.get(tabId);
-    if (!tab.url || tab.url.startsWith('chrome://') || tab.url.startsWith('edge://') || tab.url.startsWith('chrome-extension://')) return;
+    if (!tab.url || tab.url.startsWith('chrome-extension://')) return;
+
+    if (tab.url.startsWith('chrome://') || tab.url.startsWith('edge://')) {
+      const mockup = await generateMockupThumbnail(tab);
+      if (mockup) {
+        const { thumbnails = {} } = await chrome.storage.local.get('thumbnails');
+        thumbnails[tab.url] = mockup;
+        await chrome.storage.local.set({ thumbnails });
+      }
+      return;
+    }
 
     const dataUrl = await chrome.tabs.captureVisibleTab(windowId, { format: 'jpeg', quality: 40 });
     if (dataUrl) {
+      const compressed = await compressScreenshot(dataUrl, 480);
       const { thumbnails = {} } = await chrome.storage.local.get('thumbnails');
-      thumbnails[tab.url] = dataUrl;
-      // Cap stored thumbnails to 100 entries to optimize memory
+      thumbnails[tab.url] = compressed;
+      // Cap stored thumbnails to 150 entries to optimize memory
       const keys = Object.keys(thumbnails);
-      if (keys.length > 100) {
+      if (keys.length > 150) {
         delete thumbnails[keys[0]];
       }
       await chrome.storage.local.set({ thumbnails });
@@ -88,6 +190,154 @@ async function captureTabThumbnail(tabId, windowId) {
   } catch (err) {
     // Ignore capture errors for non-active or restricted tabs
   }
+}
+
+/**
+ * Captures a single tab's visual thumbnail on demand.
+ * If the tab is not currently active, it temporarily activates it, captures,
+ * and seamlessly restores the previous active tab.
+ */
+async function captureSingleTab(tabId) {
+  try {
+    const tab = await chrome.tabs.get(tabId);
+    if (!tab) return { success: false, error: 'Tab not found' };
+
+    // Handle system or extension URLs with a generated mockup card
+    if (!tab.url || tab.url.startsWith('chrome://') || tab.url.startsWith('edge://') || tab.url.startsWith('chrome-extension://')) {
+      const mockup = await generateMockupThumbnail(tab);
+      if (mockup) {
+        const { thumbnails = {} } = await chrome.storage.local.get('thumbnails');
+        thumbnails[tab.url] = mockup;
+        await chrome.storage.local.set({ thumbnails });
+        return { success: true, dataUrl: mockup, tabId, tabUrl: tab.url };
+      }
+    }
+
+    const windowId = tab.windowId;
+    const [currentActive] = await chrome.tabs.query({ active: true, windowId });
+
+    let rawDataUrl = null;
+    if (currentActive && currentActive.id === tabId) {
+      rawDataUrl = await chrome.tabs.captureVisibleTab(windowId, { format: 'jpeg', quality: 50 });
+    } else {
+      await chrome.tabs.update(tabId, { active: true });
+      await new Promise((r) => setTimeout(r, 120));
+      rawDataUrl = await chrome.tabs.captureVisibleTab(windowId, { format: 'jpeg', quality: 50 });
+      if (currentActive) {
+        await chrome.tabs.update(currentActive.id, { active: true });
+      }
+    }
+
+    if (rawDataUrl) {
+      const compressed = await compressScreenshot(rawDataUrl, 540);
+      const { thumbnails = {} } = await chrome.storage.local.get('thumbnails');
+      thumbnails[tab.url] = compressed;
+      await chrome.storage.local.set({ thumbnails });
+      return { success: true, dataUrl: compressed, tabId, tabUrl: tab.url };
+    }
+
+    // Fallback if capture was blank or prevented
+    const fallbackMockup = await generateMockupThumbnail(tab);
+    if (fallbackMockup) {
+      const { thumbnails = {} } = await chrome.storage.local.get('thumbnails');
+      thumbnails[tab.url] = fallbackMockup;
+      await chrome.storage.local.set({ thumbnails });
+      return { success: true, dataUrl: fallbackMockup, tabId, tabUrl: tab.url };
+    }
+
+    return { success: false, error: 'Could not capture screenshot' };
+  } catch (err) {
+    console.debug('Error in captureSingleTab:', err);
+    return { success: false, error: err.message };
+  }
+}
+
+/**
+ * Captures visual thumbnails for a batch of tab IDs (e.g. "Add All" for current list of tabs).
+ * Groups by window to minimize switching and cleanly restores original active tabs.
+ */
+async function captureTabsBatch(tabIds) {
+  if (!tabIds || tabIds.length === 0) return { success: true, count: 0 };
+
+  const tabsByWindow = new Map();
+  for (const id of tabIds) {
+    try {
+      const tab = await chrome.tabs.get(id);
+      if (tab) {
+        if (!tabsByWindow.has(tab.windowId)) {
+          tabsByWindow.set(tab.windowId, []);
+        }
+        tabsByWindow.get(tab.windowId).push(tab);
+      }
+    } catch {
+      // Tab may have closed
+    }
+  }
+
+  const { thumbnails = {} } = await chrome.storage.local.get('thumbnails');
+  let capturedCount = 0;
+
+  for (const [windowId, tabs] of tabsByWindow.entries()) {
+    let initialActiveTab = null;
+    try {
+      const [active] = await chrome.tabs.query({ active: true, windowId });
+      initialActiveTab = active;
+    } catch {
+      // Ignore
+    }
+
+    for (const tab of tabs) {
+      if (!tab.url || tab.url.startsWith('chrome-extension://')) continue;
+
+      if (tab.url.startsWith('chrome://') || tab.url.startsWith('edge://')) {
+        const mockup = await generateMockupThumbnail(tab);
+        if (mockup) {
+          thumbnails[tab.url] = mockup;
+          capturedCount++;
+        }
+        continue;
+      }
+
+      try {
+        if (!initialActiveTab || initialActiveTab.id !== tab.id) {
+          await chrome.tabs.update(tab.id, { active: true });
+          await new Promise((r) => setTimeout(r, 100));
+        }
+
+        const rawDataUrl = await chrome.tabs.captureVisibleTab(windowId, { format: 'jpeg', quality: 45 });
+        if (rawDataUrl) {
+          const compressed = await compressScreenshot(rawDataUrl, 480);
+          thumbnails[tab.url] = compressed;
+          capturedCount++;
+        }
+      } catch (err) {
+        console.debug('Batch capture item failed for tab', tab.id, err);
+        const mockup = await generateMockupThumbnail(tab);
+        if (mockup) {
+          thumbnails[tab.url] = mockup;
+          capturedCount++;
+        }
+      }
+    }
+
+    if (initialActiveTab) {
+      try {
+        await chrome.tabs.update(initialActiveTab.id, { active: true });
+      } catch {
+        // Ignore
+      }
+    }
+  }
+
+  // Cap stored thumbnails to 150 entries to avoid storage bloat
+  const keys = Object.keys(thumbnails);
+  if (keys.length > 150) {
+    const toDelete = keys.slice(0, keys.length - 150);
+    toDelete.forEach((k) => delete thumbnails[k]);
+  }
+
+  await chrome.storage.local.set({ thumbnails });
+  return { success: true, count: capturedCount, thumbnails };
 }
 
 // Handle global keyboard command shortcuts
@@ -111,6 +361,16 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
             }
           }
           sendResponse({ success: true });
+          break;
+        }
+        case 'CAPTURE_TAB_THUMBNAIL': {
+          const result = await captureSingleTab(message.tabId);
+          sendResponse(result);
+          break;
+        }
+        case 'CAPTURE_TABS_BATCH': {
+          const result = await captureTabsBatch(message.tabIds);
+          sendResponse(result);
           break;
         }
         case 'AUTO_GROUP_TABS': {

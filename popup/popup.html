@@ -107,9 +107,13 @@
           <span id="selectedCountBadge" class="selected-count-badge hidden">0 selected</span>
         </div>
         <div class="group-controls">
-          <button id="ungroupAllBtn" class="small-btn">Ungroup All</button>
-          <button id="collapseGroupsBtn" class="small-btn">Collapse Groups</button>
-          <button id="expandGroupsBtn" class="small-btn">Expand Groups</button>
+          <button id="addAllThumbnailsPopupBtn" class="small-btn" title="Capture and add thumbnails for open tabs in this list">
+            <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="vertical-align: -1px;"><rect x="3" y="3" width="18" height="18" rx="2"/><circle cx="8.5" cy="8.5" r="1.5"/><polyline points="21 15 16 10 5 21"/></svg>
+            <span id="addAllThumbnailsPopupText">Add All Thumbnails</span>
+          </button>
+          <button id="ungroupAllBtn" class="small-btn">Ungroup</button>
+          <button id="collapseGroupsBtn" class="small-btn">Collapse</button>
+          <button id="expandGroupsBtn" class="small-btn">Expand</button>
         </div>
       </div>
 
@@ -118,6 +122,9 @@
         <button id="closeSelectedBtn" class="btn danger-btn small-btn">
           <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="3 6 5 6 21 6"/><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/></svg>
           <span>Close Selected (<span id="closeSelectedCount">0</span>)</span>
+        </button>
+        <button id="addSelectedThumbnailsPopupBtn" class="small-btn" title="Capture and add thumbnails for selected tabs">
+          📸 Add Thumbnails
         </button>
         <button id="deselectAllBtn" class="small-btn">Deselect All</button>
       </div>

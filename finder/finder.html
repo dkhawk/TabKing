@@ -104,6 +104,10 @@
         </label>
         <span id="selectedCountBadge" class="selected-count-badge hidden">0 selected</span>
         <span class="results-count" id="resultsCountText">Showing 0 tabs</span>
+        <button id="addAllThumbnailsBtn" class="btn secondary-btn small-btn" title="Capture and add thumbnails for all tabs in the current list">
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="18" height="18" rx="2"/><circle cx="8.5" cy="8.5" r="1.5"/><polyline points="21 15 16 10 5 21"/></svg>
+          <span id="addAllThumbnailsText">Add All Thumbnails</span>
+        </button>
         <button id="closeSelectedBtn" class="btn danger-btn small-btn hidden">
           <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="3 6 5 6 21 6"/><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/></svg>
           <span>Close Selected (<span id="closeSelectedCount">0</span>)</span>
@@ -128,6 +132,44 @@
       <!-- Rendered dynamically -->
     </main>
   </div>
+
+  <!-- Tab Preview Modal / Lightbox -->
+  <dialog id="tabPreviewModal" class="tab-preview-modal">
+    <div class="preview-modal-content">
+      <div class="preview-modal-header">
+        <div class="preview-header-brand">
+          <img id="previewFavicon" class="preview-favicon" src="../icons/icon-16.png" alt="Favicon">
+          <div class="preview-header-info">
+            <h3 id="previewTitle" class="preview-title">Tab Title</h3>
+            <p id="previewUrl" class="preview-url">https://example.com</p>
+          </div>
+        </div>
+        <button id="closePreviewModalBtn" class="close-modal-btn" title="Close Preview">&times;</button>
+      </div>
+      <div class="preview-image-container">
+        <img id="previewImg" class="preview-main-img" alt="Tab Preview Screenshot">
+        <div id="previewImgLoading" class="preview-loading hidden">
+          <span class="spinner"></span> Capturing tab preview...
+        </div>
+      </div>
+      <div class="preview-meta-row" id="previewMetaRow">
+        <!-- Dynamic metadata tags -->
+      </div>
+      <div id="previewSummaryContainer" class="preview-summary-container">
+        <!-- Summary overview if available -->
+      </div>
+      <div class="preview-modal-footer">
+        <button id="previewRefreshBtn" class="btn secondary-btn small-btn" title="Retake Screenshot of this tab">
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M23 4v6h-6M1 20v-6h6"/><path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15"/></svg>
+          <span>Retake Thumbnail</span>
+        </button>
+        <div class="preview-footer-right">
+          <button id="previewCloseTabBtn" class="btn danger-btn small-btn">Close Tab</button>
+          <button id="previewJumpBtn" class="btn primary-btn small-btn">Jump to Tab</button>
+        </div>
+      </div>
+    </div>
+  </dialog>
 
   <script src="../summary.js"></script>
   <script src="finder.js"></script>
